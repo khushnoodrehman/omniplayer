@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Omniplayer - Your Music Universe</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-variant": "#343538",
+                    "on-tertiary": "#00363d",
+                    "background": "#121316",
+                    "on-primary-fixed-variant": "#593090",
+                    "primary-container": "#bd93f9",
+                    "tertiary-container": "#00b8cd",
+                    "secondary-container": "#454749",
+                    "on-primary-container": "#4e2484",
+                    "primary-fixed-dim": "#d7baff",
+                    "inverse-primary": "#714aaa",
+                    "surface-tint": "#d7baff",
+                    "surface-container-lowest": "#0d0e11",
+                    "surface-container-low": "#1a1c1f",
+                    "primary": "#d7baff",
+                    "secondary": "#c6c6c9",
+                    "inverse-on-surface": "#2f3034",
+                    "on-tertiary-fixed": "#001f24",
+                    "surface-container": "#1e2023",
+                    "on-primary-fixed": "#290055",
+                    "on-secondary-container": "#b4b5b7",
+                    "on-secondary": "#2f3133",
+                    "secondary-fixed": "#e2e2e5",
+                    "on-background": "#e3e2e6",
+                    "surface-dim": "#121316",
+                    "primary-fixed": "#eddcff",
+                    "on-secondary-fixed": "#1a1c1e",
+                    "surface": "#121316",
+                    "tertiary": "#00daf3",
+                    "tertiary-fixed": "#9cf0ff",
+                    "on-surface": "#e3e2e6",
+                    "on-primary": "#411478",
+                    "outline-variant": "#4a4451",
+                    "on-error": "#690005",
+                    "on-error-container": "#ffdad6",
+                    "surface-bright": "#38393c",
+                    "surface-container-high": "#292a2d",
+                    "on-tertiary-fixed-variant": "#004f58",
+                    "surface-container-highest": "#343538",
+                    "inverse-surface": "#e3e2e6",
+                    "tertiary-fixed-dim": "#00daf3",
+                    "on-tertiary-container": "#00434c",
+                    "on-surface-variant": "#ccc3d3",
+                    "outline": "#968e9c",
+                    "on-secondary-fixed-variant": "#454749",
+                    "secondary-fixed-dim": "#c6c6c9",
+                    "error": "#ffb4ab",
+                    "error-container": "#93000a"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "gutter": "16px",
+                    "margin-desktop": "32px",
+                    "xl": "32px",
+                    "lg": "24px",
+                    "base": "4px",
+                    "margin-mobile": "16px",
+                    "xs": "8px",
+                    "md": "16px",
+                    "sm": "12px"
+            },
+            "fontFamily": {
+                    "display-lg": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "title-md": ["Inter"],
+                    "label-sm": ["JetBrains Mono"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-md": ["Inter"]
+            },
+            "fontSize": {
+                    "display-lg": ["57px", {"lineHeight": "64px", "letterSpacing": "-0.25px", "fontWeight": "700"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "600"}],
+                    "title-md": ["16px", {"lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500"}],
+                    "label-sm": ["11px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #121316;
+            color: #e3e2e6;
+            -webkit-tap-highlight-color: transparent;
+            min-height: 100dvh;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .active-scale:active {
+            transform: scale(0.96);
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md selection:bg-primary/30 overflow-x-hidden">
+<!-- Top App Bar -->
+<header class="w-full top-0 sticky z-40 bg-background/80 backdrop-blur-md flex justify-between items-center px-margin-mobile py-md">
+<h1 class="font-headline-lg-mobile text-[24px] text-on-surface font-bold tracking-tight" id="dynamic-greeting">Good Morning</h1>
+<button class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container-high border border-outline-variant/20 text-primary active-scale transition-all">
+<span class="material-symbols-outlined" data-icon="account_circle" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+</button>
+</header>
+<main class="pb-40 px-margin-mobile space-y-xl">
+<!-- Section 1: Trending Now -->
+<section class="space-y-md">
+<div class="flex justify-between items-end">
+<h2 class="font-headline-lg-mobile text-xl text-on-surface font-bold">Trending Now</h2>
+<button class="text-primary font-label-sm text-label-sm uppercase tracking-wider">View All</button>
+</div>
+<div class="flex gap-md overflow-x-auto no-scrollbar -mx-margin-mobile px-margin-mobile">
+<!-- Trending Card 1 -->
+<div class="flex-shrink-0 w-44 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden bg-surface-container shadow-md">
+<img class="w-full h-full object-cover" data-alt="Futuristic neon city synthwave art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwN8pKTM1qe_-I7hUWfQ5fM9NfcqeQWygTl2JG92ovmv_7yHR2D0J8dzH5qdMCcHH9x9Icwq3-CugYlLu3usYNhhfzusPhuA7E53fWFKcpONaXJuvaTeGIPcoUDU62uvXQgkPGaMqh_rLM9VLLQxmr9KvQW-xiv5YNB4D8XvaxjZumAm0u0KwXBtmzYDARFY0UHLT_SCyev2R1RrfRnNlEEppYZMge05Ns_YjNnuvTbIiQqQLgsjMuMFeNb4zSol_oAugt1ebFehHT"/>
+</div>
+<div class="px-1">
+<h3 class="font-title-md text-sm text-on-surface truncate">Midnight City</h3>
+<p class="text-on-surface-variant/70 text-xs truncate">Synthwave Echoes</p>
+</div>
+</div>
+<!-- Trending Card 2 -->
+<div class="flex-shrink-0 w-44 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden bg-surface-container shadow-md">
+<img class="w-full h-full object-cover" data-alt="Abstract sound wave art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAhfq7XJon8xNjH4kku2qi-t0541UtnlKoowqz8gGCflJr1KzVAPqUfeyO3H-vu7OeQQ9nU_Dk_AoqMCqmdQ-p0t6niwm7ALrbjyzxnrift-UsEH6YAUNQ1Oj7apZkdzHUYEo1lk8HjxLQFU6svtf4BEMFWs9Gp2kH5kwUfwo_g623Polz4YemCtc8givXSYOjGUbJxjszml6xsZjUwwo5jISg1rorJ_Jvs--tTDCYjdKNl0LpiN5MEFsNmQzBY69cma00GLySEv5NY"/>
+</div>
+<div class="px-1">
+<h3 class="font-title-md text-sm text-on-surface truncate">Digital Dreams</h3>
+<p class="text-on-surface-variant/70 text-xs truncate">Future Bass</p>
+</div>
+</div>
+<!-- Trending Card 3 -->
+<div class="flex-shrink-0 w-44 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden bg-surface-container shadow-md">
+<img class="w-full h-full object-cover" data-alt="Vibrant pop geometric art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBii0ifsO0Oxt2cZuQ6Lr35U6adiMohoAEA5es2m4YnpHmC-4sk_2L7kyGFSWZFaCJ-eGJHD1ZhUVBBdy0bXwprvUnERJWpGs1JGZ7mE2noKFk3RPS2tS09zKCQ5C2-OmeA_R-x9rgsMyTeyoiXCKN2mU7IIODn9VTnkKm7uC8sVA06iT0Mro0QfA2jp63-BM5JVdWM2ehZMwgM5U3dXSpKjmOvgPIlJQBQ53_daH0XejobcTcWrkiQUb3BxGhGLeHS0CgM00RiosJq"/>
+</div>
+<div class="px-1">
+<h3 class="font-title-md text-sm text-on-surface truncate">Neon Pulse</h3>
+<p class="text-on-surface-variant/70 text-xs truncate">Hyperpop Hits</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 2: Top Global Charts -->
+<section class="space-y-md">
+<h2 class="font-headline-lg-mobile text-xl text-on-surface font-bold">Top Global Charts</h2>
+<div class="flex gap-md overflow-x-auto no-scrollbar -mx-margin-mobile px-margin-mobile">
+<!-- Playlist Card 1 -->
+<div class="flex-shrink-0 w-72 h-36 relative rounded-2xl overflow-hidden bg-gradient-to-br from-primary-container to-primary/40 p-lg shadow-lg group active-scale">
+<div class="relative z-10 h-full flex flex-col justify-end">
+<h3 class="font-headline-lg text-lg text-on-primary-container leading-tight">Global Top 50</h3>
+<p class="text-on-primary-container/80 text-sm">Updated Daily</p>
+</div>
+<div class="absolute top-0 right-0 p-4 opacity-30">
+<span class="material-symbols-outlined text-[64px]" data-icon="leaderboard">leaderboard</span>
+</div>
+</div>
+<!-- Playlist Card 2 -->
+<div class="flex-shrink-0 w-72 h-36 relative rounded-2xl overflow-hidden bg-gradient-to-br from-tertiary-container to-tertiary/40 p-lg shadow-lg group active-scale">
+<div class="relative z-10 h-full flex flex-col justify-end">
+<h3 class="font-headline-lg text-lg text-on-tertiary-container leading-tight">Viral Hits</h3>
+<p class="text-on-tertiary-container/80 text-sm">Trending Worldwide</p>
+</div>
+<div class="absolute top-0 right-0 p-4 opacity-30">
+<span class="material-symbols-outlined text-[64px]" data-icon="trending_up">trending_up</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 3: New Releases -->
+<section class="space-y-md">
+<h2 class="font-headline-lg-mobile text-xl text-on-surface font-bold">New Releases</h2>
+<div class="flex gap-md overflow-x-auto no-scrollbar -mx-margin-mobile px-margin-mobile">
+<!-- New Release 1 -->
+<div class="flex-shrink-0 w-32 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden shadow-md">
+<img class="w-full h-full object-cover" data-alt="Glowing vinyl record art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVMxlOP41NQwNt6ZJ45a_jh2s2uRtu01WlA9hwudrnyZz76aHqh636WockhAISa6yevCjmL8hnWzTma9NrGXLZAV7I1d5wbCdpiVB3slUA3avMBsiWUt6F8XXs8QjQY4gRroNnXWLFAOGzRzn5VxsseTE6uuLeTnkEGgzlMt8-qKic1zfkXhLskpwue1jwgq6PZo0nQ7raIjK1jXQ-6I-gJ3UuoS8yjElJGkfMDL9PuV6wNvvYu6B32W-5DQxPSb2a8ti593GrJZLy"/>
+</div>
+<h4 class="text-xs text-on-surface font-medium truncate text-center">After Hours</h4>
+</div>
+<!-- New Release 2 -->
+<div class="flex-shrink-0 w-32 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden shadow-md">
+<img class="w-full h-full object-cover" data-alt="Rainy window lo-fi art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDV5-90Zf5HNZo5JeV0MAuTHdMMYel__xernFKd-e_pR1P_ai07g-nZl9yMxC7Mjidq2ndsRLDmi6y7HV371aqNCbPArDC2NM_1FvuWNhBSBMGOIaxooUsbXH4Okwqj_5WTaUGEU7oEgI55fNlXhg7716VWQefT0rbWrQqpDZSRLzXvCSfonwUtbeoAyg9WlfO_fGwWyAIXp4iDcmH0VE209AX7POWim9BHiT-hYFjpoJ4fZH7S66dvh0Ba_f9xVqpwIl29fDFEBlsW"/>
+</div>
+<h4 class="text-xs text-on-surface font-medium truncate text-center">Rainy Days</h4>
+</div>
+<!-- New Release 3 -->
+<div class="flex-shrink-0 w-32 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden shadow-md">
+<img class="w-full h-full object-cover" data-alt="High energy motion blur art" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBOx780HJhvL9V-Bd-TZ133qlATS6SBEG8WPu2hpxlpgq5IVA3KRurrphUNZxA7vbjMjLZWzELTLMZUs5njXIkYH-BUyc9fon6SmFxkLJkeIXRfwE_nnux93z1vXyLoGLARkHSG7SiGGdeQZ_qbE_AeyKYlmeZACxp2l3Y1I7dGZc6OColGsCxI_vKBj4mp3MDKoL2A3ez6AJgMNt3NAGterxwd2VRdy0i2OD7SNQ5gb7h_-DMpht6lN4YXH6-ULqCGfL1YcDMaq8j9"/>
+</div>
+<h4 class="text-xs text-on-surface font-medium truncate text-center">Hyper Drive</h4>
+</div>
+<!-- New Release 4 -->
+<div class="flex-shrink-0 w-32 space-y-xs group">
+<div class="relative aspect-square rounded-xl overflow-hidden shadow-md">
+<img class="w-full h-full object-cover" data-alt="Traditional south asian neon patterns" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTna_dCNMIFJ3VTXsh4RR0CcysDUg6NtxfOFCNj226ND7x1mT6NG7s_C_4ujzIbPJoZM8Pdd0IrCFOtZ1IROpDTQxwUju7oNYj5D8ZzpjsWcr6ZyiuEfEtvwzpWu8O3mlwWUv8MifMShgzzzcvUPgchyxdXdsv-pdFcqVcxFrUGnHAOv4o7XalqQUN1yN9iUWNw0Xd8gY0Wp1jeI5G2DurhtE0-5hbquARsP3cWgTf0ZJ2bqn0V1YMHmx53ZW9EgbkRANW0MUbYJIl"/>
+</div>
+<h4 class="text-xs text-on-surface font-medium truncate text-center">Heritage Mix</h4>
+</div>
+</div>
+</section>
+<!-- Quick Actions -->
+<section class="grid grid-cols-2 gap-md">
+<button class="active-scale flex flex-col items-center justify-center gap-sm py-lg px-md bg-surface-container-low rounded-2xl border border-outline-variant/10 shadow-sm transition-colors">
+<div class="w-12 h-12 rounded-full bg-secondary-container/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[28px]" data-icon="folder_open">folder_open</span>
+</div>
+<span class="font-title-md text-sm text-on-surface text-center">Scan Local Storage</span>
+</button>
+<button class="active-scale flex flex-col items-center justify-center gap-sm py-lg px-md bg-surface-container-low rounded-2xl border border-outline-variant/10 shadow-sm transition-colors">
+<div class="w-12 h-12 rounded-full bg-secondary-container/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[28px]" data-icon="link">link</span>
+</div>
+<span class="font-title-md text-sm text-on-surface text-center">Import Playlist</span>
+</button>
+</section>
+</main>
+<!-- Floating Mini-Player + Bottom Nav Stack -->
+<div class="fixed bottom-0 left-0 w-full z-50">
+<!-- Floating Mini Player -->
+<div class="mx-margin-mobile mb-2 relative bg-surface-container/95 backdrop-blur-xl rounded-xl border border-outline-variant/20 shadow-2xl overflow-hidden active-scale transition-transform duration-150">
+<div class="flex items-center justify-between p-sm pr-md">
+<div class="flex items-center gap-sm flex-1 min-w-0">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-lg" data-icon="music_note">music_note</span>
+</div>
+<div class="min-w-0">
+<h4 class="font-title-md text-xs text-on-surface truncate">Not Playing</h4>
+<p class="text-[10px] text-on-surface-variant/70 truncate">Select a track to start</p>
+</div>
+</div>
+<div class="flex items-center gap-sm">
+<button class="w-8 h-8 flex items-center justify-center rounded-full text-on-surface">
+<span class="material-symbols-outlined text-[28px]" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Slim Progress Bar at Bottom Edge -->
+<div class="w-full h-[3px] bg-white/10">
+<div class="h-full bg-primary w-0"></div>
+</div>
+</div>
+<!-- Bottom Navigation -->
+<nav class="bg-surface-container/80 backdrop-blur-xl flex justify-around items-center pt-xs pb-6 px-gutter border-t border-outline-variant/10 rounded-t-2xl">
+<a class="flex flex-col items-center justify-center gap-1" href="#">
+<div class="bg-primary-container/20 text-primary rounded-full px-5 py-1">
+<span class="material-symbols-outlined" data-icon="home" style="font-variation-settings: 'FILL' 1;">home</span>
+</div>
+<span class="font-label-sm text-[10px] text-primary">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 text-on-surface-variant" href="#">
+<div class="px-5 py-1">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</div>
+<span class="font-label-sm text-[10px]">Search</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 text-on-surface-variant" href="#">
+<div class="px-5 py-1">
+<span class="material-symbols-outlined" data-icon="library_music">library_music</span>
+</div>
+<span class="font-label-sm text-[10px]">Library</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 text-on-surface-variant" href="#">
+<div class="px-5 py-1">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</div>
+<span class="font-label-sm text-[10px]">Settings</span>
+</a>
+</nav>
+</div>
+<!-- Dynamic Greeting Script -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const greeting = document.getElementById('dynamic-greeting');
+            const hours = new Date().getHours();
+            
+            if (hours >= 5 && hours < 12) {
+                greeting.innerText = 'Good Morning';
+            } else if (hours >= 12 && hours < 17) {
+                greeting.innerText = 'Good Afternoon';
+            } else {
+                greeting.innerText = 'Good Evening';
+            }
+        });
+    </script>
+</body></html>

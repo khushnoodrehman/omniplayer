@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Omniplayer - Search Results</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-low": "#1a1c1f",
+                        "primary": "#d7baff",
+                        "inverse-on-surface": "#2f3034",
+                        "on-primary-fixed": "#290055",
+                        "error-container": "#93000a",
+                        "secondary": "#c6c6c9",
+                        "on-secondary-fixed-variant": "#454749",
+                        "secondary-container": "#454749",
+                        "primary-container": "#bd93f9",
+                        "on-secondary": "#2f3133",
+                        "tertiary-fixed-dim": "#00daf3",
+                        "surface-dim": "#121316",
+                        "outline": "#968e9c",
+                        "on-tertiary-fixed-variant": "#004f58",
+                        "on-tertiary-fixed": "#001f24",
+                        "tertiary-fixed": "#9cf0ff",
+                        "tertiary-container": "#00b8cd",
+                        "surface-variant": "#343538",
+                        "on-tertiary-container": "#00434c",
+                        "surface-container-lowest": "#0d0e11",
+                        "primary-fixed-dim": "#d7baff",
+                        "on-surface": "#e3e2e6",
+                        "surface-bright": "#38393c",
+                        "surface-tint": "#d7baff",
+                        "surface-container-highest": "#343538",
+                        "secondary-fixed": "#e2e2e5",
+                        "on-primary-fixed-variant": "#593090",
+                        "inverse-primary": "#714aaa",
+                        "on-primary": "#411478",
+                        "inverse-surface": "#e3e2e6",
+                        "on-primary-container": "#4e2484",
+                        "surface": "#121316",
+                        "primary-fixed": "#eddcff",
+                        "surface-container": "#1e2023",
+                        "on-error-container": "#ffdad6",
+                        "on-surface-variant": "#ccc3d3",
+                        "tertiary": "#00daf3",
+                        "error": "#ffb4ab",
+                        "on-secondary-fixed": "#1a1c1e",
+                        "on-background": "#e3e2e6",
+                        "secondary-fixed-dim": "#c6c6c9",
+                        "background": "#121316",
+                        "on-tertiary": "#00363d",
+                        "on-secondary-container": "#b4b5b7",
+                        "on-error": "#690005",
+                        "surface-container-high": "#292a2d",
+                        "outline-variant": "#4a4451"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "base": "4px",
+                        "margin-desktop": "32px",
+                        "xl": "32px",
+                        "margin-mobile": "16px",
+                        "xs": "8px",
+                        "md": "16px",
+                        "gutter": "16px",
+                        "sm": "12px",
+                        "lg": "24px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "title-md": ["Inter"],
+                        "label-sm": ["JetBrains Mono"],
+                        "display-lg": ["Inter"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "600"}],
+                        "title-md": ["16px", {"lineHeight": "24px", "letterSpacing": "0.15px", "fontWeight": "500"}],
+                        "label-sm": ["11px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500"}],
+                        "display-lg": ["57px", {"lineHeight": "64px", "letterSpacing": "-0.25px", "fontWeight": "700"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #121316;
+            color: #e3e2e6;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .glass-panel {
+            background: rgba(26, 28, 31, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .active-pill {
+            background-color: #bd93f9;
+            color: #290055;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .animate-slide-up {
+            animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-md text-body-md overflow-x-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full flex justify-between items-center px-margin-mobile h-16 w-full z-50 bg-surface dark:bg-surface">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold text-primary dark:text-primary">Omniplayer</h1>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-surface-variant dark:hover:bg-surface-variant transition-colors duration-200">
+<span class="material-symbols-outlined text-primary dark:text-primary" data-icon="search">search</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-variant dark:hover:bg-surface-variant transition-colors duration-200">
+<span class="material-symbols-outlined text-primary dark:text-primary" data-icon="settings">settings</span>
+</button>
+</div>
+</header>
+<main class="pt-20 pb-48 px-margin-mobile max-w-screen-xl mx-auto">
+<!-- Search Input & Chips -->
+<section class="mb-lg">
+<div class="relative w-full mb-md">
+<div class="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</div>
+<input class="w-full h-14 pl-12 pr-4 rounded-full border-none bg-surface-container-high text-on-surface focus:ring-2 focus:ring-primary font-title-md text-title-md transition-all shadow-lg shadow-black/20" placeholder="Search songs, artists, local files..." type="text" value="Atif Aslam"/>
+</div>
+<div class="flex gap-xs overflow-x-auto pb-2 custom-scrollbar">
+<button class="px-6 py-2 rounded-full font-label-sm text-label-sm active-pill whitespace-nowrap transition-transform active:scale-95">All</button>
+<button class="px-6 py-2 rounded-full font-label-sm text-label-sm bg-surface-container text-on-surface-variant border border-outline-variant/30 whitespace-nowrap transition-transform active:scale-95">Local</button>
+<button class="px-6 py-2 rounded-full font-label-sm text-label-sm bg-surface-container text-on-surface-variant border border-outline-variant/30 whitespace-nowrap transition-transform active:scale-95">YouTube</button>
+<button class="px-6 py-2 rounded-full font-label-sm text-label-sm bg-surface-container text-on-surface-variant border border-outline-variant/30 whitespace-nowrap transition-transform active:scale-95">Playlists</button>
+</div>
+</section>
+<!-- Top Result Card -->
+<section class="mb-xl">
+<h2 class="font-title-md text-title-md mb-md text-primary-fixed-dim">Top Result</h2>
+<div class="relative group overflow-hidden rounded-[24px] bg-surface-container-low border border-white/5 shadow-2xl">
+<div class="flex flex-col md:flex-row p-4 gap-lg items-center">
+<div class="relative aspect-square w-full md:w-48 shrink-0 rounded-xl overflow-hidden shadow-lg shadow-black/40">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="Close-up artistic photography of a soulful South Asian male singer performing under deep purple and cyan stage lights. The image has a cinematic grain, high contrast, and a mood of spiritual devotion. Subtle smoke effects swirl in the background of the dark, premium music interface style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNUAqGHDp58ckGSqzENMchoeKMM8ZmjHs5zMv45I_hlZJj57CU9hdQS4NNTX8zDPJEnrzOj-Hf-DqojmXGMx1hZa8go_U6iKvbELMh0Jx4KxQ2N-RgMtHChFgPvAVtuDu7Nufs4BjTB49lpc3_da0qr4rRN8cq3mqbP5OEjp4oPSUos-90zYNn2iHLbuD9FjK0FvpVooWhljIoYiynJHgAoZJnKbcpIWQjsxtHYW_JsKFhoSIbF8DeQTw6JFsuiQjGtme_1Q0oYhT3"/>
+</div>
+<div class="flex-grow text-center md:text-left space-y-2">
+<div class="flex items-center justify-center md:justify-start gap-2 mb-1">
+<span class="px-2 py-0.5 rounded bg-primary-container/20 text-primary text-[10px] uppercase font-bold tracking-wider">Best Match</span>
+</div>
+<h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface leading-tight">Tajdar-e-Haram</h3>
+<p class="font-title-md text-title-md text-on-surface-variant">Atif Aslam • Single</p>
+<div class="flex items-center justify-center md:justify-start gap-4 mt-6">
+<button class="w-14 h-14 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shadow-lg shadow-primary-container/20 hover:scale-105 transition-transform active:scale-90">
+<span class="material-symbols-outlined text-[32px]" data-icon="play_arrow" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<button class="w-12 h-12 rounded-full border border-outline-variant flex items-center justify-center text-on-surface-variant hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined" data-icon="favorite">favorite</span>
+</button>
+<button class="w-12 h-12 rounded-full border border-outline-variant flex items-center justify-center text-on-surface-variant hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Local Music Section -->
+<section class="mb-xl">
+<div class="flex justify-between items-center mb-md">
+<h2 class="font-title-md text-title-md text-on-surface">Local Audio <span class="text-on-surface-variant/60 font-normal ml-1">(Fast Access)</span></h2>
+<button class="text-primary font-label-sm text-label-sm">View All</button>
+</div>
+<div class="space-y-base">
+<!-- Local Item 1 -->
+<div class="flex items-center p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/10 hover:bg-surface-container transition-colors group">
+<div class="w-12 h-12 rounded-lg bg-surface-variant flex items-center justify-center shrink-0 mr-md">
+<span class="material-symbols-outlined text-tertiary" data-icon="folder_open">folder_open</span>
+</div>
+<div class="flex-grow">
+<h4 class="font-title-md text-title-md text-on-surface">Pehli Dafa</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Atif Aslam • 4.2 MB • MP3</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant/40" data-icon="phonelink">phonelink</span>
+<button class="p-2 text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Local Item 2 -->
+<div class="flex items-center p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/10 hover:bg-surface-container transition-colors group">
+<div class="w-12 h-12 rounded-lg bg-surface-variant flex items-center justify-center shrink-0 mr-md">
+<span class="material-symbols-outlined text-tertiary" data-icon="music_note">music_note</span>
+</div>
+<div class="flex-grow">
+<h4 class="font-title-md text-title-md text-on-surface">Dil Diyan Gallan</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Atif Aslam • 5.8 MB • FLAC</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant/40" data-icon="save">save</span>
+<button class="p-2 text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- YouTube Results Section -->
+<section class="mb-xl">
+<div class="flex justify-between items-center mb-md">
+<h2 class="flex items-center gap-2 font-title-md text-title-md text-on-surface">
+                    YouTube Global Search
+                    <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+</h2>
+<button class="text-primary font-label-sm text-label-sm">Full Web Results</button>
+</div>
+<div class="grid grid-cols-1 gap-base">
+<!-- YT Item 1 -->
+<div class="flex items-center p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors group">
+<div class="relative w-20 h-14 rounded-lg overflow-hidden shrink-0 mr-md">
+<img class="w-full h-full object-cover" data-alt="A cinematic music video thumbnail featuring a bright cityscape at dusk with neon lights reflecting on wet streets. The colors are deep indigo and magenta, matching the premium Omniplayer aesthetic. The style is high-definition photography with a soft bokeh effect." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC6nhM7eR6zEhN0i1cq6sNBniDlvZ_cSCRA2fmNkx2EnjPThiuK3qdLX7ABcp6xGPloN518umrD7dI26kR-Z1Jq5cZyGfk95FKICfY0dskIVTw-u6kKVpWsdHxzZPpMBKy7UJn4iJw1UAI_JC4wvrBJVrqvgedjAHvAb3_nLkLVwDR6EWkguIkFrVj4qe5WvhdrbyIa-WzcLEHRJhOmRLFBzHus-oela7JTw2rR4vmjVwxETzHQpbGvSs1JWdelkGwsdeJXWfDNhdpx"/>
+<div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white" data-icon="play_circle">play_circle</span>
+</div>
+</div>
+<div class="flex-grow">
+<h4 class="font-title-md text-title-md text-on-surface line-clamp-1">Dekhte Dekhte (Official Video)</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="public">public</span> T-Series • 4:18
+                        </p>
+</div>
+<button class="p-2 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="download">download</span>
+</button>
+</div>
+<!-- YT Item 2 -->
+<div class="flex items-center p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors group">
+<div class="relative w-20 h-14 rounded-lg overflow-hidden shrink-0 mr-md">
+<img class="w-full h-full object-cover" data-alt="A minimalist music visualizer thumbnail with a central glowing sphere of light emitting rhythmic pulses. The background is a dark obsidian gradient with purple atmospheric dust particles. Elegant and sophisticated digital art style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAq1YKGJskHmmaphqnKRnzX4Z5nXN5uBHlcrGQXbG1vpRHvpdf0U7HblwA9S8bPGbvGygJb-RTB42ZbglfWSkQG1alnCveH7F30myABYGbdH3dfdXEt0oAvWOuxU2CU9VLgQoed0ELSb77HD71_2Sw9MNNfp6nB1T7NdXbghjlAcJoaJTrKJIx3KqIsife_xOTXhD-VA1Ktk_Kjc-clVdQQb2b93BrlRg3WyC1dbfSB1JniqikrjzV7Z4DSfrnu08XQmrpd5IdBOQnS"/>
+</div>
+<div class="flex-grow">
+<h4 class="font-title-md text-title-md text-on-surface line-clamp-1">Tera Hua - Love Anthem</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="language">language</span> Atif Aslam Vevo • 3:55
+                        </p>
+</div>
+<button class="p-2 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="download">download</span>
+</button>
+</div>
+<!-- YT Item 3 -->
+<div class="flex items-center p-3 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors group">
+<div class="relative w-20 h-14 rounded-lg overflow-hidden shrink-0 mr-md">
+<img class="w-full h-full object-cover" data-alt="A portrait of a male singer in a leather jacket standing against a wall of vintage music equipment and synthesizers. The lighting is moody with purple rim lights and teal shadows. Professional studio photography style for a music application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuARelxwCqCj8LrIroTdH8J3eeJuHl0hiL4B6-gZeYN8WlO88Hfw7pnzPBzXBeRuf1K-XBieTom5dy_PWPJj1fUzzb0zR3Vy6aBGwC9WgUvLEz2m28ZzBvTdtmwqgKsHAcAMgBD3iJhERG_7udFPTzIH0EH4Q0dHGzDVJuyn9v_nCw8ZITH35d8WZMkQAAswLIPYewrxKCoXyAk1tDPstOGVm6aORXfIh1rQMpQm7-ufnEu9PP1HhB5jWkR5_cKlx8I1o9rrilYiHZgJ"/>
+</div>
+<div class="flex-grow">
+<h4 class="font-title-md text-title-md text-on-surface line-clamp-1">O Saathi - Lyrical Video</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="video_library">video_library</span> Music Junction • 4:32
+                        </p>
+</div>
+<button class="p-2 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="download">download</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- Native M3 Bottom Sheet -->
+<div class="fixed inset-0 bg-black/60 z-[60] transition-opacity duration-300" id="bottomSheetOverlay">
+<div class="absolute bottom-0 left-0 right-0 glass-panel rounded-t-[28px] p-6 animate-slide-up max-w-screen-md mx-auto">
+<div class="w-12 h-1 bg-outline-variant/40 rounded-full mx-auto mb-6"></div>
+<div class="flex items-center gap-4 mb-8">
+<div class="w-16 h-16 rounded-lg overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Album cover art featuring abstract liquid metal shapes in violet and silver, reflecting a dark environment. High-end modern music cover aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBAc_vQxJeAkEpqG1JZLU46ViOlnbdkQKsjG2CMdbTAjahaX5_JwcF3N_gfIv9cQVZqUd8YsKoTZud8ZMUWPIUAsqZS09o5724LAws2ntdxxNJ3GjuSaqmW8Sz1XMvZXy9DFQMuVv_EAWLKTE4-9iIEqP2tDYMzM47BCGIlJzdia-9Vh8yyq9i9_OsKAh60Ptbb3VxS3ZHcQJf-ZYcOnQYuGis-ndskzA2adt_7vMMb8FKh3Zp1-x9n88cQBnIrcbut1uHPQ0wvUWm5"/>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface">Tajdar-e-Haram</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Atif Aslam</p>
+</div>
+</div>
+<div class="space-y-2">
+<button class="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-variant transition-colors text-on-surface">
+<span class="material-symbols-outlined text-primary" data-icon="playlist_play">playlist_play</span>
+<span class="font-title-md">Play Next</span>
+</button>
+<button class="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-variant transition-colors text-on-surface">
+<span class="material-symbols-outlined text-primary" data-icon="queue_music">queue_music</span>
+<span class="font-title-md">Add to Queue</span>
+</button>
+<button class="w-full flex items-center gap-4 p-4 rounded-xl hover:bg-surface-variant transition-colors text-on-surface">
+<span class="material-symbols-outlined text-primary" data-icon="download_for_offline">download_for_offline</span>
+<span class="font-title-md">Download for Offline</span>
+</button>
+</div>
+<div class="mt-4 pb-safe">
+<button class="w-full py-4 text-primary font-bold text-center" id="closeSheet">Dismiss</button>
+</div>
+</div>
+</div>
+<!-- Bottom Navigation Bar (Hidden on Mobile Search Focus by UX Convention, but required by Shared Components) -->
+<nav class="fixed bottom-0 w-full flex justify-around items-center h-20 px-4 pb-safe bg-surface-container/80 dark:bg-surface-container/80 backdrop-blur-xl z-50">
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 transition-transform active:scale-90">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-sm text-label-sm mt-1">Home</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-primary-container dark:bg-primary-container text-on-primary-container dark:text-on-primary-container rounded-full px-4 py-1 scale-95 transition-transform">
+<span class="material-symbols-outlined" data-icon="search" style="font-variation-settings: 'FILL' 1;">search</span>
+<span class="font-label-sm text-label-sm mt-1">Search</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 transition-transform active:scale-90">
+<span class="material-symbols-outlined" data-icon="library_music">library_music</span>
+<span class="font-label-sm text-label-sm mt-1">Library</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant px-4 py-1 transition-transform active:scale-90">
+<span class="material-symbols-outlined" data-icon="workspace_premium">workspace_premium</span>
+<span class="font-label-sm text-label-sm mt-1">Premium</span>
+</div>
+</nav>
+<script>
+        const overlay = document.getElementById('bottomSheetOverlay');
+        const closeBtn = document.getElementById('closeSheet');
+
+        closeBtn.addEventListener('click', () => {
+            overlay.classList.add('opacity-0');
+            overlay.querySelector('.animate-slide-up').style.transform = 'translateY(100%)';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 300);
+        });
+
+        // Simple interaction for result items to show the bottom sheet
+        document.querySelectorAll('.hover\\:bg-surface-container').forEach(item => {
+            item.addEventListener('click', () => {
+                overlay.style.display = 'block';
+                setTimeout(() => {
+                    overlay.classList.remove('opacity-0');
+                    overlay.querySelector('.animate-slide-up').style.transform = 'translateY(0)';
+                }, 10);
+            });
+        });
+    </script>
+</body></html>
