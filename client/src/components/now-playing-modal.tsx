@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,16 +7,14 @@ import {
   Dimensions,
   ScrollView,
   Platform,
-  Modal,
-  Animated,
-  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BottomSheet, RNHostView } from '@expo/ui';
 import { useTheme } from '@/hooks/use-theme';
-import { usePlayback } from '@/context/PlaybackContext';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { AppIcon } from '@/components/ui/app-icon';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -41,84 +39,25 @@ export default function NowPlayingModal() {
 
   const {
     currentTrack,
-    isPlaying,
-    position,
-    duration,
-    isPlayerVisible,
-    isShuffle,
-    isRepeat,
     favoriteTracks,
-    togglePlay,
-    toggleFavorite,
-    toggleShuffle,
-    toggleRepeat,
+    duration,
+    position,
     seek,
+    isPlayerVisible,
     setPlayerVisible,
-  } = usePlayback();
+    toggleFavorite,
+    isPlaying,
+    togglePlay,
+    isShuffle,
+    toggleShuffle,
+    isRepeat,
+    toggleRepeat,
+    playNext,
+    playPrevious
+  } = usePlaybackStore();
 
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'lyrics' | 'queue'>('lyrics');
-
-  // ── Slide animation ──────────────────────────────────────────────────────────
-  const [slideAnim] = useState(() => new Animated.Value(screenHeight));
-
-  useEffect(() => {
-    if (isPlayerVisible) {
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 65,
-        friction: 11,
-      }).start();
-    }
-  }, [isPlayerVisible, slideAnim]);
-
-  const dismissModal = () => {
-    Animated.timing(slideAnim, {
-      toValue: screenHeight,
-      duration: 280,
-      useNativeDriver: true,
-    }).start(() => {
-      setIsLyricsExpanded(false);
-      setPlayerVisible(false);
-      // reset for next open
-      slideAnim.setValue(screenHeight);
-    });
-  };
-
-  // ── Swipe-down pan responder (drag handle only) ──────────────────────────────
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, { dy, dx }) =>
-          dy > 6 && Math.abs(dy) > Math.abs(dx),
-        onPanResponderMove: (_, { dy }) => {
-          if (dy > 0) slideAnim.setValue(dy);
-        },
-        onPanResponderRelease: (_, { dy, vy }) => {
-          if (dy > 120 || vy > 0.7) {
-            Animated.timing(slideAnim, {
-              toValue: screenHeight,
-              duration: 280,
-              useNativeDriver: true,
-            }).start(() => {
-              setIsLyricsExpanded(false);
-              setPlayerVisible(false);
-              slideAnim.setValue(screenHeight);
-            });
-          } else {
-            Animated.spring(slideAnim, {
-              toValue: 0,
-              useNativeDriver: true,
-              bounciness: 4,
-            }).start();
-          }
-        },
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slideAnim]
-  );
 
   if (!currentTrack) return null;
 
@@ -136,23 +75,19 @@ export default function NowPlayingModal() {
   const artGlowColor = colors.accent.replace(')', ', 0.30)').replace('rgb(', 'rgba(') ?? 'rgba(215,186,255,0.30)';
 
   return (
-    <Modal
-      visible={isPlayerVisible}
-      transparent={true}
-      animationType="none"
-      onRequestClose={dismissModal}
-      statusBarTranslucent={true}
+    <BottomSheet
+      isPresented={isPlayerVisible}
+      onDismiss={() => {
+        setPlayerVisible(false);
+        setIsLyricsExpanded(false);
+      }}
+      snapPoints={['full']}
+      showDragIndicator={true}
     >
-      <Animated.View
-        style={[
-          styles.root,
-          { backgroundColor: colors.background, transform: [{ translateY: slideAnim }] },
-        ]}
-      >
-        {/* ─── Root: full-screen themed background (100% pixel control) ─── */}
-
-        {/* ═══ LAYER 0: Immersive full-bleed gradient background ═══ */}
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <RNHostView matchContents>
+        <View style={[styles.root, { backgroundColor: colors.background }]}>
+          {/* ═══ LAYER 0: Immersive full-bleed gradient background ═══ */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
             {/* Layer 1: Top-to-bottom primary purple wash — full width */}
             <LinearGradient
               colors={[
@@ -179,237 +114,235 @@ export default function NowPlayingModal() {
             />
           </View>
 
-        {/* ═══ MAIN CANVAS ═══ */}
-        <View
-          style={[
-            styles.mainCanvas,
-            {
-              paddingTop: Math.max(insets.top, 8),
-              paddingBottom: Math.max(insets.bottom, 8),
-            },
-          ]}
-        >
-          {/* ── Drag handle (swipe down to dismiss) ── */}
-          <View style={styles.dragHandleArea} {...panResponder.panHandlers}>
-            <View style={styles.dragHandleBar} />
-          </View>
-
-          {/* ── Header ── */}
-          <View style={styles.header}>
-            <View style={styles.headerRow}>
-              {/* Source badge — glassmorphism pill matching Stitch */}
-              <View
-                style={[
-                  styles.sourceBadge,
-                  {
-                    backgroundColor: `${SURFACE_CONTAINER_HIGH}66`, // 40% opacity
-                    borderColor: BORDER_WHITE_5,
-                  },
-                ]}
-              >
-                <SymbolView
-                  name={{ ios: 'folder.fill', android: 'folder_open', web: 'folder_open' }}
-                  size={16}
-                  tintColor={colors.accent}
-                />
-                <RNText style={[styles.sourceBadgeText, { color: ON_SURFACE_VARIANT }]}>
-                  {currentTrack.sourceType === 'local' ? 'Playing from Local' : 'Playing from YouTube'}
-                </RNText>
-              </View>
-
-              <Pressable
-                onPress={() => alert('Track Options')}
-                style={styles.headerMenuButton}
-              >
-                <SymbolView
-                  name={{ ios: 'ellipsis', android: 'more_vert', web: 'more_vert' }}
-                  size={22}
-                  tintColor={colors.text}
-                />
-              </Pressable>
-            </View>
-          </View>
-
-          {/* ── Album Art ── */}
-          <View style={styles.artSection}>
-            <View style={styles.artCardContainer}>
-              {/* Vivid purple glow behind the card — Stitch: bg-primary/30 blur-[40px] */}
-              <View
-                style={[
-                  styles.artGlow,
-                  { backgroundColor: artGlowColor },
-                ]}
-              />
-              {/* Cover image with white/10 border */}
-              <Image
-                source={{ uri: currentTrack.image }}
-                style={[styles.albumArt, { borderColor: BORDER_WHITE_10 }]}
-                contentFit="cover"
-              />
-            </View>
-          </View>
-
-          {/* ── Track Info ── */}
-          <View style={styles.infoSection}>
-            <View style={styles.infoRow}>
-              <View style={{ flex: 1, gap: 4 }}>
-                <RNText style={[styles.trackTitle, { color: colors.text }]} numberOfLines={1}>
-                  {currentTrack.title}
-                </RNText>
-                <RNText style={[styles.trackArtist, { color: colors.accent }]} numberOfLines={1}>
-                  {currentTrack.artist}
-                </RNText>
-              </View>
-
-              <View style={styles.actionButtons}>
-                <Pressable
-                  onPress={() => toggleFavorite(currentTrack.id)}
-                  style={styles.iconButton}
-                >
-                  <SymbolView
-                    name={{
-                      ios: isFavorited ? 'heart.fill' : 'heart',
-                      android: isFavorited ? 'favorite' : 'favorite_border',
-                      web: isFavorited ? 'favorite' : 'favorite_border',
-                    }}
-                    size={22}
-                    tintColor={isFavorited ? colors.pulseDot : ON_SURFACE_VARIANT}
-                  />
-                </Pressable>
-                <Pressable
-                  onPress={() => alert('Download Offline')}
-                  style={styles.iconButton}
-                >
-                  <SymbolView
-                    name={{ ios: 'arrow.down.to.line', android: 'download', web: 'download' }}
-                    size={22}
-                    tintColor={ON_SURFACE_VARIANT}
-                  />
-                </Pressable>
-              </View>
-            </View>
-          </View>
-
-          {/* ── Playback Controls & Seekbar ── */}
-          <View style={styles.controlsSection}>
-            {/* Seekbar — Stitch: h-1.5 bg-on-surface-variant/20 */}
-            <Pressable onPress={handleSeekBarPress} style={styles.seekbarContainer}>
-              <View style={[styles.seekbarBg, { backgroundColor: 'rgba(204,195,211,0.20)' }]}>
+          {/* ═══ MAIN CANVAS ═══ */}
+          <View
+            style={[
+              styles.mainCanvas,
+              {
+                paddingTop: 8, // The sheet has its own native drag handle
+                paddingBottom: Math.max(insets.bottom, 16),
+              },
+            ]}
+          >
+            {/* ── Header ── */}
+            <View style={styles.header}>
+              <View style={styles.headerRow}>
+                {/* Source badge — glassmorphism pill matching Stitch */}
                 <View
                   style={[
-                    styles.seekbarFill,
-                    { backgroundColor: colors.accent, width: `${progressPercentage}%` },
+                    styles.sourceBadge,
+                    {
+                      backgroundColor: `${SURFACE_CONTAINER_HIGH}66`, // 40% opacity
+                      borderColor: BORDER_WHITE_5,
+                    },
+                  ]}
+                >
+                  <AppIcon
+                    ios="folder.fill"
+                    android="folder-open-outline"
+                    size={16}
+                    color={colors.accent}
+                  />
+                  <RNText style={[styles.sourceBadgeText, { color: ON_SURFACE_VARIANT }]}>
+                    {currentTrack.sourceType === 'local' ? 'Playing from Local' : 'Playing from YouTube'}
+                  </RNText>
+                </View>
+
+                <Pressable
+                  onPress={() => alert('Track Options')}
+                  style={styles.headerMenuButton}
+                >
+                  <AppIcon
+                    ios="ellipsis"
+                    android="ellipsis-vertical"
+                    size={22}
+                    color={colors.text}
+                  />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* ── Album Art ── */}
+            <View style={styles.artSection}>
+              <View style={styles.artCardContainer}>
+                {/* Vivid purple glow behind the card ── */}
+                <View
+                  style={[
+                    styles.artGlow,
+                    { backgroundColor: artGlowColor },
                   ]}
                 />
+                {/* Cover image with white/10 border */}
+                <Image
+                  source={{ uri: currentTrack.image }}
+                  style={[styles.albumArt, { borderColor: BORDER_WHITE_10 }]}
+                  contentFit="cover"
+                />
               </View>
-            </Pressable>
-
-            {/* Timestamps */}
-            <View style={styles.timestampsRow}>
-              <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
-                {formatTime(position)}
-              </RNText>
-              <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
-                {formatTime(duration)}
-              </RNText>
             </View>
 
-            {/* Playback Buttons — Stitch layout */}
-            <View style={styles.buttonRow}>
-              <Pressable onPress={toggleShuffle}>
-                <SymbolView
-                  name={{ ios: 'shuffle', android: 'shuffle', web: 'shuffle' }}
-                  size={22}
-                  tintColor={isShuffle ? colors.accent : ON_SURFACE_VARIANT}
-                />
-              </Pressable>
+            {/* ── Track Info ── */}
+            <View style={styles.infoSection}>
+              <View style={styles.infoRow}>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <RNText style={[styles.trackTitle, { color: colors.text }]} numberOfLines={1}>
+                    {currentTrack.title}
+                  </RNText>
+                  <RNText style={[styles.trackArtist, { color: colors.accent }]} numberOfLines={1}>
+                    {currentTrack.artist}
+                  </RNText>
+                </View>
 
-              <Pressable onPress={() => seek(0)}>
-                <SymbolView
-                  name={{ ios: 'backward.fill', android: 'skip_previous', web: 'skip_previous' }}
-                  size={34}
-                  tintColor={colors.text}
-                />
-              </Pressable>
-
-              {/* FAB — Stitch: bg-primary-container (#bd93f9) with purple glow shadow */}
-              <Pressable
-                onPress={togglePlay}
-                style={[
-                  styles.playPauseFAB,
-                  {
-                    backgroundColor: PRIMARY_CONTAINER,
-                    ...Platform.select({
-                      ios: {
-                        shadowColor: PRIMARY_CONTAINER,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.45,
-                        shadowRadius: 12,
-                      },
-                      android: { elevation: 10 },
-                    }),
-                  },
-                ]}
-              >
-                <SymbolView
-                  name={
-                    isPlaying
-                      ? { ios: 'pause.fill', android: 'pause', web: 'pause' }
-                      : { ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }
-                  }
-                  size={42}
-                  tintColor={ON_PRIMARY_CONTAINER}
-                />
-              </Pressable>
-
-              <Pressable onPress={() => alert('Next Track')}>
-                <SymbolView
-                  name={{ ios: 'forward.fill', android: 'skip_next', web: 'skip_next' }}
-                  size={34}
-                  tintColor={colors.text}
-                />
-              </Pressable>
-
-              <Pressable onPress={toggleRepeat}>
-                <SymbolView
-                  name={{ ios: 'repeat', android: 'repeat', web: 'repeat' }}
-                  size={22}
-                  tintColor={isRepeat ? colors.accent : ON_SURFACE_VARIANT}
-                />
-              </Pressable>
+                <View style={styles.actionButtons}>
+                  <Pressable
+                    onPress={() => toggleFavorite(currentTrack.id)}
+                    style={styles.iconButton}
+                  >
+                    <AppIcon
+                      ios={isFavorited ? 'heart.fill' : 'heart'}
+                      android={isFavorited ? 'heart' : 'heart-outline'}
+                      size={22}
+                      color={isFavorited ? colors.pulseDot : ON_SURFACE_VARIANT}
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => alert('Download Offline')}
+                    style={styles.iconButton}
+                  >
+                    <AppIcon
+                      ios="arrow.down.to.line"
+                      android="download-outline"
+                      size={22}
+                      color={ON_SURFACE_VARIANT}
+                    />
+                  </Pressable>
+                </View>
+              </View>
             </View>
-          </View>
 
-          {/* Spacer */}
-          <View style={{ flex: 1 }} />
+            {/* ── Playback Controls & Seekbar ── */}
+            <View style={styles.controlsSection}>
+              {/* Seekbar */}
+              <Pressable onPress={handleSeekBarPress} style={styles.seekbarContainer}>
+                <View style={[styles.seekbarBg, { backgroundColor: 'rgba(204,195,211,0.20)' }]}>
+                  <View
+                    style={[
+                      styles.seekbarFill,
+                      { backgroundColor: colors.accent, width: `${progressPercentage}%` },
+                    ]}
+                  />
+                </View>
+              </Pressable>
 
-          {/* ── Lyrics Peek Bar — Stitch: glass-panel rounded-t-3xl border-t border-white/10 ── */}
-          <Pressable
-            style={styles.lyricsPeekContainer}
-            onPress={() => setIsLyricsExpanded(true)}
-          >
-            {/* Glass blur background */}
-            <View style={styles.lyricsPeekGlass} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-              <SymbolView
-                name={{ ios: 'quote.bubble', android: 'lyrics', web: 'lyrics' }}
+              {/* Timestamps */}
+              <View style={styles.timestampsRow}>
+                <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
+                  {formatTime(position)}
+                </RNText>
+                <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
+                  {formatTime(duration)}
+                </RNText>
+              </View>
+
+              {/* Playback Buttons */}
+              <View style={styles.buttonRow}>
+                <Pressable onPress={playPrevious}>
+                  <AppIcon
+                    ios="shuffle"
+                    android="shuffle"
+                    size={22}
+                    color={isShuffle ? colors.accent : ON_SURFACE_VARIANT}
+                  />
+                </Pressable>
+
+                <Pressable onPress={playPrevious}>
+                  <AppIcon
+                    ios="backward.fill"
+                    android="play-back"
+                    size={34}
+                    color={colors.text}
+                  />
+                </Pressable>
+
+                {/* FAB */}
+                <Pressable
+                  onPress={togglePlay}
+                  style={[
+                    styles.playPauseFAB,
+                    {
+                      backgroundColor: PRIMARY_CONTAINER,
+                      ...Platform.select({
+                        ios: {
+                          shadowColor: PRIMARY_CONTAINER,
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.45,
+                          shadowRadius: 12,
+                        },
+                        android: { elevation: 10 },
+                      }),
+                    },
+                  ]}
+                >
+                  <AppIcon
+                    ios={isPlaying ? 'pause.fill' : 'play.fill'}
+                    android={isPlaying ? 'pause' : 'play'}
+                    size={42}
+                    color={ON_PRIMARY_CONTAINER}
+                  />
+                </Pressable>
+
+                <Pressable onPress={playNext}>
+                  <AppIcon
+                    ios="forward.fill"
+                    android="play-forward"
+                    size={34}
+                    color={colors.text}
+                  />
+                </Pressable>
+
+                <Pressable onPress={toggleRepeat}>
+                  <AppIcon
+                    ios="repeat"
+                    android="repeat"
+                    size={22}
+                    color={isRepeat ? colors.accent : ON_SURFACE_VARIANT}
+                  />
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Spacer */}
+            <View style={{ flex: 1 }} />
+
+            {/* ── Lyrics Peek Bar ── */}
+            <Pressable
+              style={styles.lyricsPeekContainer}
+              onPress={() => setIsLyricsExpanded(true)}
+            >
+              {/* Glass blur background */}
+              <View style={styles.lyricsPeekGlass} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                <AppIcon
+                  ios="quote.bubble"
+                  android="chatbubble-ellipses-outline"
+                  size={18}
+                  color={colors.accent}
+                />
+                <RNText
+                  style={[styles.lyricsPeekText, { color: colors.text }]}
+                  numberOfLines={1}
+                >
+                  {"\"Waiting in a car... Waiting for a ride\""}
+                </RNText>
+              </View>
+              <AppIcon
+                ios="chevron.up"
+                android="chevron-up"
                 size={18}
-                tintColor={colors.accent}
+                color={ON_SURFACE_VARIANT}
               />
-              <RNText
-                style={[styles.lyricsPeekText, { color: colors.text }]}
-                numberOfLines={1}
-              >
-                {"\"Waiting in a car... Waiting for a ride\""}
-              </RNText>
-            </View>
-            <SymbolView
-              name={{ ios: 'chevron.up', android: 'expand_less', web: 'expand_less' }}
-              size={18}
-              tintColor={ON_SURFACE_VARIANT}
-            />
-          </Pressable>
-        </View>
+            </Pressable>
+          </View>
 
           {/* ═══ EXPANDED LYRICS / QUEUE DRAWER ═══ */}
           {isLyricsExpanded && (
@@ -460,10 +393,11 @@ export default function NowPlayingModal() {
                     onPress={() => setIsLyricsExpanded(false)}
                     style={styles.drawerCloseBtn}
                   >
-                    <SymbolView
-                      name={{ ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }}
+                    <AppIcon
+                      ios="chevron.down"
+                      android="chevron-down"
                       size={24}
-                      tintColor={colors.text}
+                      color={colors.text}
                     />
                   </Pressable>
                 </View>
@@ -572,29 +506,17 @@ export default function NowPlayingModal() {
               </ScrollView>
             </View>
           )}
-      </Animated.View>
-    </Modal>
+        </View>
+      </RNHostView>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1,
+    width: screenWidth,
+    height: screenHeight,
     overflow: 'hidden',
-  },
-
-  // ── Drag handle ──
-  dragHandleArea: {
-    alignItems: 'center',
-    paddingTop: 12,
-    paddingBottom: 6,
-    width: '100%',
-  },
-  dragHandleBar: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.35)',
   },
 
   // ── Layout ──

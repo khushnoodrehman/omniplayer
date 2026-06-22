@@ -1,0 +1,48 @@
+# Dependencies
+**/node_modules/
+
+# Expo / Metro (Client)
+client/.expo/
+client/web-build/
+client/expo-env.d.ts
+client/.metro-health-check*
+client/*.tsbuildinfo
+
+# Native Android / iOS Build Folders (Client)
+client/ios/
+client/android/
+client/.kotlin/
+client/*.orig.*
+client/*.jks
+client/*.p8
+client/*.p12
+client/*.key
+client/*.mobileprovision
+
+# Python (Server)
+server/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+server/.pytest_cache/
+server/.ipynb_checkpoints/
+
+# Environment / Secret Files
+**/.env
+**/.env.local
+**/.env.*.local
+**/*.pem
+**/*.key
+
+# Debug & Logs
+**/npm-debug.*
+**/yarn-debug.*
+**/yarn-error.*
+**/*.log
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

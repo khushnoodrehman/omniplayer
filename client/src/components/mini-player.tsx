@@ -1,16 +1,16 @@
 import React from 'react';
 import { StyleSheet, View, Text as RNText, Pressable, Dimensions } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import { Image } from 'expo-image';
+import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
-import { usePlayback } from '@/context/PlaybackContext';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 
 const { width: screenWidth } = Dimensions.get('window');
 const miniPlayerWidth = screenWidth - 32;
 
 export default function MiniPlayer() {
   const colors = useTheme();
-  const { currentTrack, isPlaying, position, duration, togglePlay, setPlayerVisible } = usePlayback();
+  const { currentTrack, isPlaying, position, duration, togglePlay, setPlayerVisible } = usePlaybackStore();
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
@@ -23,32 +23,32 @@ export default function MiniPlayer() {
   };
 
   return (
-    <Pressable 
+    <Pressable
       style={styles.miniPlayerContainer}
       onPress={handlePress}
     >
       <View style={[
-        styles.miniPlayerRow, 
-        { 
-          width: miniPlayerWidth, 
+        styles.miniPlayerRow,
+        {
+          width: miniPlayerWidth,
           backgroundColor: colors.miniPlayerBackground,
           borderColor: colors.cardBorder
         }
       ]}>
         {currentTrack ? (
           <View style={styles.miniPlayerArtContainer}>
-            <Image 
-              source={{ uri: currentTrack.image }} 
-              style={StyleSheet.absoluteFillObject} 
-              contentFit="cover" 
+            <Image
+              source={{ uri: currentTrack.image }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
             />
           </View>
         ) : (
           <View style={[styles.miniPlayerIconWrapper, { backgroundColor: colors.accentLight }]}>
-            <SymbolView name={{ ios: 'music.note', android: 'music_note', web: 'music_note' }} size={18} tintColor={colors.accent} />
+            <AppIcon ios="music.note" android="musical-notes-outline" size={18} color={colors.accent} />
           </View>
         )}
-        
+
         <View style={{ flexDirection: 'column', gap: 2, flex: 1, marginRight: 8 }}>
           <RNText style={[styles.miniPlayerTitle, { color: colors.text }]} numberOfLines={1}>
             {currentTrack ? currentTrack.title : 'Not Playing'}
@@ -57,18 +57,19 @@ export default function MiniPlayer() {
             {currentTrack ? currentTrack.artist : 'Select a track to start'}
           </RNText>
         </View>
-        
-        <Pressable 
+
+        <Pressable
           onPress={(e) => {
             e.stopPropagation();
             togglePlay();
-          }} 
+          }}
           style={({ pressed }) => [styles.miniPlayerPlayButton, pressed && styles.pressed]}
         >
-          <SymbolView 
-            name={isPlaying ? { ios: 'pause.fill', android: 'pause', web: 'pause' } : { ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }} 
-            size={26} 
-            tintColor={colors.text} 
+          <AppIcon
+            ios={isPlaying ? 'pause.fill' : 'play.fill'}
+            android={isPlaying ? 'pause' : 'play'}
+            size={26}
+            color={colors.text}
           />
         </Pressable>
       </View>

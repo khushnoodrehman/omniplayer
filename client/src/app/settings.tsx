@@ -1,20 +1,21 @@
 import React from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import { useTheme } from '@/hooks/use-theme';
+import { AppIcon } from '@/components/ui/app-icon';
 import MiniPlayer from '@/components/mini-player';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 interface SettingRowProps {
-  icon: { ios: string; android: string; web: string };
+  iosIcon: string;
+  androidIcon: any;
   title: string;
   value?: string;
   onPress: () => void;
 }
 
-const SettingRow = ({ icon, title, value, onPress }: SettingRowProps) => {
+const SettingRow = ({ iosIcon, androidIcon, title, value, onPress }: SettingRowProps) => {
   const colors = useTheme();
   return (
     <Pressable
@@ -26,15 +27,16 @@ const SettingRow = ({ icon, title, value, onPress }: SettingRowProps) => {
       ]}
     >
       <View style={[styles.settingIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
-        <SymbolView name={icon} size={20} tintColor={colors.accent} />
+        <AppIcon ios={iosIcon} android={androidIcon} size={20} color={colors.accent} />
       </View>
       <RNText style={[styles.settingTitle, { color: colors.text }]}>{title}</RNText>
       <View style={{ flex: 1 }} />
       {value && <RNText style={[styles.settingValue, { color: colors.textSecondary }]}>{value}</RNText>}
-      <SymbolView 
-        name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} 
-        size={16} 
-        tintColor={colors.textSecondary} 
+      <AppIcon
+        ios="chevron.right"
+        android="chevron-forward"
+        size={16}
+        color={colors.textSecondary}
         style={{ opacity: 0.5, marginLeft: 8 }}
       />
     </Pressable>
@@ -47,7 +49,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 16), backgroundColor: colors.background }]}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
@@ -56,18 +58,19 @@ export default function SettingsScreen() {
           <View style={[styles.header, { width: screenWidth - 32, marginHorizontal: 16 }]}>
             <RNText style={[styles.headerTitle, { color: colors.text }]}>Settings</RNText>
             <View style={{ flex: 1 }} />
-            <Pressable 
+            <Pressable
               onPress={() => alert('Profile Details')}
               style={({ pressed }) => [
-                styles.profileButton, 
+                styles.profileButton,
                 { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
                 pressed && styles.pressed
               ]}
             >
-              <SymbolView 
-                name={{ ios: 'person.crop.circle.fill', android: 'account_circle', web: 'account_circle' }} 
-                size={28} 
-                tintColor={colors.accent} 
+              <AppIcon
+                ios="person.crop.circle.fill"
+                android="person-circle"
+                size={28}
+                color={colors.accent}
               />
             </Pressable>
           </View>
@@ -76,14 +79,16 @@ export default function SettingsScreen() {
           <View style={{ gap: 12, paddingHorizontal: 16 }}>
             <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>General</RNText>
             <View style={{ gap: 8 }}>
-              <SettingRow 
-                icon={{ ios: 'waveform', android: 'graphic_eq', web: 'graphic_eq' }}
+              <SettingRow
+                iosIcon="waveform"
+                androidIcon="volume-high"
                 title="Audio Quality"
                 value="High (320kbps)"
                 onPress={() => alert('Select Audio Quality')}
               />
-              <SettingRow 
-                icon={{ ios: 'paintpalette', android: 'palette', web: 'palette' }}
+              <SettingRow
+                iosIcon="paintpalette"
+                androidIcon="color-palette"
                 title="Dynamic Theme"
                 value="Follow System"
                 onPress={() => alert('Change Theme Options')}
@@ -95,14 +100,16 @@ export default function SettingsScreen() {
           <View style={{ gap: 12, paddingHorizontal: 16 }}>
             <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Storage & Scan</RNText>
             <View style={{ gap: 8 }}>
-              <SettingRow 
-                icon={{ ios: 'folder.badge.gearshape', android: 'folder_open', web: 'folder_open' }}
+              <SettingRow
+                iosIcon="folder.badge.gearshape"
+                androidIcon="folder"
                 title="Scan Folders"
                 value="2 directories"
                 onPress={() => alert('Configure local folder paths')}
               />
-              <SettingRow 
-                icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
+              <SettingRow
+                iosIcon="trash"
+                androidIcon="trash"
                 title="Clear Cached Artwork"
                 value="24.5 MB"
                 onPress={() => alert('Cached artwork cleared successfully')}
@@ -114,8 +121,9 @@ export default function SettingsScreen() {
           <View style={{ gap: 12, paddingHorizontal: 16 }}>
             <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</RNText>
             <View style={{ gap: 8 }}>
-              <SettingRow 
-                icon={{ ios: 'info.circle', android: 'info', web: 'info' }}
+              <SettingRow
+                iosIcon="info.circle"
+                androidIcon="information-circle"
                 title="Version"
                 value="v1.0.0 (SDK 56)"
                 onPress={() => alert('Omniplayer v1.0.0 - Built with React Native & Expo')}

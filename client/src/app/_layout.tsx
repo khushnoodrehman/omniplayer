@@ -5,7 +5,6 @@ import { StatusBar } from 'expo-status-bar';
 import { Colors } from '@/constants/theme';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
-import { PlaybackProvider } from '@/context/PlaybackContext';
 import NowPlayingModal from '@/components/now-playing-modal';
 
 export default function TabLayout() {
@@ -25,13 +24,11 @@ export default function TabLayout() {
   };
 
   return (
-    <PlaybackProvider>
-      <ThemeProvider value={customTheme}>
-        <StatusBar style="auto" translucent />
-        <AnimatedSplashOverlay />
-        <AppTabs />
-        <NowPlayingModal />
-      </ThemeProvider>
-    </PlaybackProvider>
+    <ThemeProvider value={customTheme}>
+      <StatusBar style="auto" />
+      <AnimatedSplashOverlay />
+      <AppTabs />
+      <NowPlayingModal />
+    </ThemeProvider>
   );
 }
