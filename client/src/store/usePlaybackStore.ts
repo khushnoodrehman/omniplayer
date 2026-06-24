@@ -1,19 +1,26 @@
 import { create } from 'zustand';
 import { createAudioPlayer, AudioPlayer, setAudioModeAsync } from 'expo-audio';
+// 🌟 DATABASE IMPORTS ADD KIYE HAIN
+import { addFavoriteDB, removeFavoriteDB, getFavoritesDB, addToHistoryDB, getHistoryDB } from '@/services/db';
 
-// ⚠️ YAHAN APNA BACKEND URL LIKHO (Taake store bhi API call kar sake)
-const BACKEND_URL = 'http://10.20.23.43:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 export interface Track {
     id: string;
     title: string;
     artist: string;
     image: string;
-    duration: number; // in seconds
+    duration: number;
     sourceType: 'local' | 'youtube';
     audioFormat?: string;
     fileSize?: string;
     uri?: string;
+}
+
+// 🌟 LYRIC INTERFACE
+export interface ParsedLyric {
+    time: number;
+    text: string;
 }
 
 interface PlaybackState {
@@ -26,7 +33,13 @@ interface PlaybackState {
     isPlayerVisible: boolean;
     isShuffle: boolean;
     isRepeat: boolean;
-    favoriteTracks: string[];
+    favoriteTracks: string[]; // Sirf IDs store karenge for quick checking
+    history: Track[];         // UI mein history dikhane ke liye
+
+    // 🌟 LYRICS CACHING STATE
+    currentLyrics: ParsedLyric[];
+    isLyricsLoading: boolean;
+    lyricsError: string | null;
 
     playTrack: (track: Track, newQueue?: Track[]) => Promise<void>;
     playNext: () => Promise<void>;
@@ -34,9 +47,11 @@ interface PlaybackState {
     togglePlay: () => Promise<void>;
     seek: (position: number) => Promise<void>;
     setPlayerVisible: (visible: boolean) => void;
-    toggleFavorite: (trackId: string) => void;
+    toggleFavorite: (track: Track) => Promise<void>;
     toggleShuffle: () => void;
     toggleRepeat: () => void;
+    loadStoreData: () => Promise<void>;
+    fetchLyricsForTrack: (track: Track) => Promise<void>; // 🌟 FETCH LYRICS FUNCTION
 }
 
 let playerInstance: AudioPlayer | null = null;
@@ -53,17 +68,99 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     isShuffle: false,
     isRepeat: false,
     favoriteTracks: [],
+    history: [],
+
+    // 🌟 LYRICS STATE INIT
+    currentLyrics: [],
+    isLyricsLoading: false,
+    lyricsError: null,
+
+    // 🌟 APP START HOTEY HI YE FUNCTION CHALEGA
+    loadStoreData: async () => {
+        try {
+            const favs = await getFavoritesDB();
+            const hist = await getHistoryDB();
+            set({
+                favoriteTracks: favs.map(f => f.id),
+                history: hist
+            });
+        } catch (error) {
+            console.error("Error loading store data:", error);
+        }
+    },
+
+    // 🌟 FETCH LYRICS FUNCTION
+    fetchLyricsForTrack: async (track: Track) => {
+        set({ isLyricsLoading: true, lyricsError: null, currentLyrics: [] });
+        try {
+            let sendTitle = track.title;
+            let sendArtist = track.artist;
+
+            // 🌟 LOCAL SONGS KE LIYE AUTOMATIC CLEANING LOGIC
+            if (track.sourceType === 'local') {
+                if (track.title.includes(' - ')) {
+                    const parts = track.title.split(' - ');
+                    // Agar "Artist - Title" format hai
+                    sendArtist = parts[0].strip ? parts[0].strip() : parts[0].trim();
+                    sendTitle = parts[1].strip ? parts[1].strip() : parts[1].trim();
+
+                    // File extension (.mp3, .flac, .m4a) remove karo
+                    sendTitle = sendTitle.replace(/\.(mp3|flac|m4a|ogg)$/i, '');
+                    // Shuru ke numbers (like 03.) remove karo artist se
+                    sendArtist = sendArtist.replace(/^\d+\.?\s*/, '');
+                } else {
+                    sendTitle = track.title.replace(/\.(mp3|flac|m4a|ogg)$/i, '');
+                    sendArtist = ''; // Fallback agar artist ka pata na chale
+                }
+            }
+
+            // Target ID sirf online ke liye bhejenge, local ke liye khali string
+            const targetId = track.sourceType === 'youtube' ? track.id : '';
+
+            const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(sendTitle)}&artist=${encodeURIComponent(sendArtist)}&id=${encodeURIComponent(targetId)}`;
+
+            // 🌟 CLIENT TERMINAL LOG FOR DEBUGGING
+            console.log(`[Zustand] Outgoing Lyrics Request -> Title: "${sendTitle}" | Artist: "${sendArtist}"`);
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.type === 'synced') {
+                const parseLRC = (lrcText: string): ParsedLyric[] => {
+                    const lines = lrcText.split('\n');
+                    const parsed: ParsedLyric[] = [];
+                    const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\]/;
+                    lines.forEach(line => {
+                        const match = line.match(timeRegex);
+                        if (match) {
+                            const min = parseInt(match[1], 10);
+                            const sec = parseFloat(match[2]);
+                            parsed.push({ time: (min * 60) + sec, text: line.replace(timeRegex, '').trim() });
+                        }
+                    });
+                    return parsed;
+                };
+                set({ currentLyrics: parseLRC(data.lyrics) });
+            } else if (data.type === 'static') {
+                set({ currentLyrics: [{ time: 0, text: data.lyrics }] });
+            } else {
+                set({ lyricsError: 'Lyrics not available' });
+            }
+        } catch (err) {
+            set({ lyricsError: 'Failed to load lyrics' });
+        } finally {
+            set({ isLyricsLoading: false });
+        }
+    },
 
     playTrack: async (track: Track, newQueue?: Track[]) => {
         try {
             if (playerInstance) {
                 playerInstance.pause();
-
                 if (statusSubscription) {
                     statusSubscription.remove();
                     statusSubscription = null;
                 }
-
                 if (typeof playerInstance.release === 'function') {
                     playerInstance.release();
                 }
@@ -83,7 +180,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 isPlaying: true
             });
 
-            // 🌟 DYNAMIC URL FETCHING (Agar URL nahi hai toh fetch karo)
+            // 🌟 GAANA PLAY HOTEY HI HISTORY MEIN SAVE KARO AUR LYRICS MANGWAO
+            addToHistoryDB(track);
+            get().fetchLyricsForTrack(track); // 🌟 FETCH LYRICS CALL
+
+            set((state) => {
+                const newHistory = [track, ...state.history.filter(t => t.id !== track.id)].slice(0, 30);
+                return { history: newHistory };
+            });
+
+            // DYNAMIC URL FETCHING
             let streamUrl = track.uri;
 
             if (!streamUrl && track.sourceType === 'youtube') {
@@ -92,7 +198,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     const data = await response.json();
                     if (data.stream_url) {
                         streamUrl = data.stream_url;
-                        track.uri = streamUrl; // State aur queue update karne ke liye store kar lo
+                        track.uri = streamUrl;
                     }
                 } catch (err) {
                     console.error("Store stream fetch error:", err);
@@ -109,7 +215,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 shouldPlayInBackground: true,
             });
 
-            // Ab track.uri ki jagah hum fetched streamUrl use kar rahe hain
             playerInstance = createAudioPlayer(streamUrl);
 
             statusSubscription = playerInstance.addListener('playbackStatusUpdate', (status) => {
@@ -121,7 +226,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     });
 
                     if (status.didJustFinish) {
-                        get().playNext(); // Agla gaana khud play hoga!
+                        get().playNext();
                     }
                 }
             });
@@ -193,11 +298,19 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
     setPlayerVisible: (visible) => set({ isPlayerVisible: visible }),
 
-    toggleFavorite: (trackId) => set((state) => ({
-        favoriteTracks: state.favoriteTracks.includes(trackId)
-            ? state.favoriteTracks.filter(id => id !== trackId)
-            : [...state.favoriteTracks, trackId]
-    })),
+    // 🌟 DIL (HEART) PAR CLICK KARNE SE SQLITE MEIN BHI SAVE/REMOVE HOGA
+    toggleFavorite: async (track: Track) => {
+        const { favoriteTracks } = get();
+        const isFav = favoriteTracks.includes(track.id);
+
+        if (isFav) {
+            await removeFavoriteDB(track.id); // DB se hatao
+            set({ favoriteTracks: favoriteTracks.filter(id => id !== track.id) }); // State se hatao
+        } else {
+            await addFavoriteDB(track); // DB mein dalo
+            set({ favoriteTracks: [...favoriteTracks, track.id] }); // State mein dalo
+        }
+    },
 
     toggleShuffle: () => set((state) => ({ isShuffle: !state.isShuffle })),
     toggleRepeat: () => set((state) => ({ isRepeat: !state.isRepeat })),

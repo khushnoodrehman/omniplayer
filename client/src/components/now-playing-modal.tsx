@@ -16,6 +16,9 @@ import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AppIcon } from '@/components/ui/app-icon';
 
+// 🌟 NAYA IMPORT: Hamara banaya hua Lyrics component
+import LyricsView from '@/components/lyrics-view';
+
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 // Stitch design token aliases (dark mode primary palette)
@@ -119,7 +122,7 @@ export default function NowPlayingModal() {
             style={[
               styles.mainCanvas,
               {
-                paddingTop: 8, // The sheet has its own native drag handle
+                paddingTop: 8,
                 paddingBottom: Math.max(insets.bottom, 16),
               },
             ]}
@@ -127,12 +130,12 @@ export default function NowPlayingModal() {
             {/* ── Header ── */}
             <View style={styles.header}>
               <View style={styles.headerRow}>
-                {/* Source badge — glassmorphism pill matching Stitch */}
+                {/* Source badge */}
                 <View
                   style={[
                     styles.sourceBadge,
                     {
-                      backgroundColor: `${SURFACE_CONTAINER_HIGH}66`, // 40% opacity
+                      backgroundColor: `${SURFACE_CONTAINER_HIGH}66`,
                       borderColor: BORDER_WHITE_5,
                     },
                   ]}
@@ -165,14 +168,12 @@ export default function NowPlayingModal() {
             {/* ── Album Art ── */}
             <View style={styles.artSection}>
               <View style={styles.artCardContainer}>
-                {/* Vivid purple glow behind the card ── */}
                 <View
                   style={[
                     styles.artGlow,
                     { backgroundColor: artGlowColor },
                   ]}
                 />
-                {/* Cover image with white/10 border */}
                 <Image
                   source={{ uri: currentTrack.image }}
                   style={[styles.albumArt, { borderColor: BORDER_WHITE_10 }]}
@@ -195,7 +196,7 @@ export default function NowPlayingModal() {
 
                 <View style={styles.actionButtons}>
                   <Pressable
-                    onPress={() => toggleFavorite(currentTrack.id)}
+                    onPress={() => toggleFavorite(currentTrack)}
                     style={styles.iconButton}
                   >
                     <AppIcon
@@ -246,7 +247,7 @@ export default function NowPlayingModal() {
 
               {/* Playback Buttons */}
               <View style={styles.buttonRow}>
-                <Pressable onPress={playPrevious}>
+                <Pressable onPress={toggleShuffle}>
                   <AppIcon
                     ios="shuffle"
                     android="shuffle"
@@ -332,7 +333,7 @@ export default function NowPlayingModal() {
                   style={[styles.lyricsPeekText, { color: colors.text }]}
                   numberOfLines={1}
                 >
-                  {"\"Waiting in a car... Waiting for a ride\""}
+                  Tap to view live lyrics
                 </RNText>
               </View>
               <AppIcon
@@ -352,10 +353,8 @@ export default function NowPlayingModal() {
                 { paddingTop: Math.max(insets.top, 16) },
               ]}
             >
-              {/* Glass blur fill for drawer */}
               <View style={styles.expandedDrawerGlass} />
 
-              {/* Drawer header */}
               <View style={styles.expandedDrawerHeader}>
                 <View style={styles.expandedDrawerHandle} />
                 <View style={styles.expandedHeaderRow}>
@@ -403,107 +402,48 @@ export default function NowPlayingModal() {
                 </View>
               </View>
 
-              {/* Scrollable content */}
-              <ScrollView
-                contentContainerStyle={{ padding: 24, paddingBottom: 64 }}
-                showsVerticalScrollIndicator={false}
-              >
+              {/* 🌟 YAHAN CHANGE KIYA HAI: Lyrics component render ho raha hai */}
+              <View style={{ flex: 1 }}>
                 {activeTab === 'lyrics' ? (
-                  <View style={{ gap: 24 }}>
-                    <RNText style={[styles.lyricTitle, { color: ON_SURFACE_VARIANT }]}>
-                      {currentTrack.title}
-                    </RNText>
-                    <RNText style={[styles.lyricLineNormal, { color: colors.text }]}>
-                      Waiting in a car{'\n'}Waiting for a ride in the dark
-                    </RNText>
-                    <RNText style={[styles.lyricLineNormal, { color: colors.text }]}>
-                      The night city grows{'\n'}Look at the horizon glow
-                    </RNText>
-                    <RNText style={[styles.lyricLineHighlight, { color: colors.accent }]}>
-                      {"\"The city is my church...\""}
-                    </RNText>
-                    <RNText style={[styles.lyricLineNormal, { color: colors.text }]}>
-                      It wraps me in its sparkling arms
-                    </RNText>
-                    <RNText style={[styles.lyricLineNormal, { color: colors.text }]}>
-                      The night city grows{'\n'}Look at the horizon glow
-                    </RNText>
-                  </View>
+                  <LyricsView />
                 ) : (
-                  <View style={{ gap: 16 }}>
-                    <RNText style={[styles.lyricTitle, { color: ON_SURFACE_VARIANT }]}>QUEUE</RNText>
-                    {/* Now Playing */}
-                    <View
-                      style={[
-                        styles.queueItem,
-                        { backgroundColor: `${SURFACE_CONTAINER_HIGH}99`, borderColor: BORDER_WHITE_10 },
-                      ]}
-                    >
-                      <Image
-                        source={{ uri: currentTrack.image }}
-                        style={styles.queueItemArt}
-                        contentFit="cover"
-                      />
-                      <View style={{ flex: 1 }}>
-                        <RNText style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={1}>
-                          {currentTrack.title} (Now Playing)
-                        </RNText>
-                        <RNText style={[styles.queueItemArtist, { color: ON_SURFACE_VARIANT }]} numberOfLines={1}>
-                          {currentTrack.artist}
-                        </RNText>
+                  <ScrollView
+                    contentContainerStyle={{ padding: 24, paddingBottom: 64 }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    <View style={{ gap: 16 }}>
+                      <RNText style={[styles.lyricTitle, { color: ON_SURFACE_VARIANT }]}>QUEUE</RNText>
+                      {/* Now Playing */}
+                      <View
+                        style={[
+                          styles.queueItem,
+                          { backgroundColor: `${SURFACE_CONTAINER_HIGH}99`, borderColor: BORDER_WHITE_10 },
+                        ]}
+                      >
+                        <Image
+                          source={{ uri: currentTrack.image }}
+                          style={styles.queueItemArt}
+                          contentFit="cover"
+                        />
+                        <View style={{ flex: 1 }}>
+                          <RNText style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={1}>
+                            {currentTrack.title} (Now Playing)
+                          </RNText>
+                          <RNText style={[styles.queueItemArtist, { color: ON_SURFACE_VARIANT }]} numberOfLines={1}>
+                            {currentTrack.artist}
+                          </RNText>
+                        </View>
                       </View>
-                    </View>
 
-                    <RNText style={[styles.queueUpcomingLabel, { color: colors.accent, marginTop: 12 }]}>
-                      Next Songs
-                    </RNText>
+                      <RNText style={[styles.queueUpcomingLabel, { color: colors.accent, marginTop: 12 }]}>
+                        Next Songs
+                      </RNText>
 
-                    {/* Next track 1 */}
-                    <View
-                      style={[
-                        styles.queueItem,
-                        { backgroundColor: `${SURFACE_CONTAINER_HIGH}99`, borderColor: BORDER_WHITE_10 },
-                      ]}
-                    >
-                      <Image
-                        source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAhfq7XJon8xNjH4kku2qi-t0541UtnlKoowqz8gGCflJr1KzVAPqUfeyO3H-vu7OeQQ9nU_Dk_AoqMCqmdQ-p0t6niwm7ALrbjyzxnrift-UsEH6YAUNQ1Oj7apZkdzHUYEo1lk8HjxLQFU6svtf4BEMFWs9Gp2kH5kwUfwo_g623Polz4YemCtc8givXSYOjGUbJxjszml6xsZjUwwo5jISg1rorJ_Jvs--tTDCYjdKNl0LpiN5MEFsNmQzBY69cma00GLySEv5NY' }}
-                        style={styles.queueItemArt}
-                        contentFit="cover"
-                      />
-                      <View style={{ flex: 1 }}>
-                        <RNText style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={1}>
-                          Digital Dreams
-                        </RNText>
-                        <RNText style={[styles.queueItemArtist, { color: ON_SURFACE_VARIANT }]} numberOfLines={1}>
-                          Future Bass
-                        </RNText>
-                      </View>
+                      {/* Queue tracks ko dynamic banane ke liye yahan tum store.queue map kar sakte ho */}
                     </View>
-
-                    {/* Next track 2 */}
-                    <View
-                      style={[
-                        styles.queueItem,
-                        { backgroundColor: `${SURFACE_CONTAINER_HIGH}99`, borderColor: BORDER_WHITE_10 },
-                      ]}
-                    >
-                      <Image
-                        source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBii0ifsO0Oxt2cZuQ6Lr35U6adiMohoAEA5es2m4YnpHmC-4sk_2L7kyGFSWZFaCJ-eGJHD1ZhUVBBdy0bXwprvUnERJWpGs1JGZ7mE2noKFk3RPS2tS09zKCQ5C2-OmeA_R-x9rgsMyTeyoiXCKN2mU7IIODn9VTnkKm7uC8sVA06iT0Mro0QfA2jp63-BM5JVdWM2ehZMwgM5U3dXSpKjmOvgPIlJQBQ53_daH0XejobcTcWrkiQUb3BxGhGLeHS0CgM00RiosJq' }}
-                        style={styles.queueItemArt}
-                        contentFit="cover"
-                      />
-                      <View style={{ flex: 1 }}>
-                        <RNText style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={1}>
-                          Neon Pulse
-                        </RNText>
-                        <RNText style={[styles.queueItemArtist, { color: ON_SURFACE_VARIANT }]} numberOfLines={1}>
-                          Hyperpop Hits
-                        </RNText>
-                      </View>
-                    </View>
-                  </View>
+                  </ScrollView>
                 )}
-              </ScrollView>
+              </View>
             </View>
           )}
         </View>
@@ -519,7 +459,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // ── Layout ──
   mainCanvas: {
     flex: 1,
     paddingHorizontal: 16,
@@ -535,7 +474,6 @@ const styles = StyleSheet.create({
     height: 48,
   },
 
-  // Source badge — glassy pill
   sourceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -558,7 +496,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Album art — fixed height so it doesn't push header/controls off screen
   artSection: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -576,7 +513,6 @@ const styles = StyleSheet.create({
     width: '80%',
     height: '80%',
     borderRadius: 24,
-    // Platform glow: iOS shadow, Android elevation
     ...Platform.select({
       ios: {
         shadowColor: '#d7baff',
@@ -594,7 +530,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
-  // Track info
   infoSection: {
     marginBottom: 12,
   },
@@ -625,7 +560,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Controls
   controlsSection: {
     width: '100%',
   },
@@ -662,7 +596,6 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 4,
   },
-  // Play FAB — Stitch: w-20 h-20 rounded-full bg-primary-container
   playPauseFAB: {
     width: 76,
     height: 76,
@@ -671,7 +604,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Lyrics peek bar — glass panel
   lyricsPeekContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -682,7 +614,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: BORDER_WHITE_10,
     overflow: 'hidden',
-    marginHorizontal: -16, // extend full width beyond canvas padding
+    marginHorizontal: -16,
   },
   lyricsPeekGlass: {
     position: 'absolute',
@@ -702,7 +634,6 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
 
-  // Expanded lyrics drawer — glass panel
   expandedDrawer: {
     position: 'absolute',
     left: 0,
@@ -757,7 +688,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Lyrics text
   lyricTitle: {
     fontSize: 20,
     fontWeight: '700',
@@ -765,20 +695,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     opacity: 0.5,
   },
-  lyricLineNormal: {
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 32,
-    opacity: 0.9,
-  },
-  lyricLineHighlight: {
-    fontSize: 30,
-    fontWeight: '700',
-    lineHeight: 42,
-    fontStyle: 'italic',
-  },
-
-  // Queue items
   queueItem: {
     flexDirection: 'row',
     alignItems: 'center',

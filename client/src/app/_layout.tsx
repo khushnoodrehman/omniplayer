@@ -1,15 +1,27 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import { useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 
 import { Colors } from '@/constants/theme';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
 import NowPlayingModal from '@/components/now-playing-modal';
 
+import { initDB } from '@/services/db';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+
 export default function TabLayout() {
+  const loadStoreData = usePlaybackStore((state) => state.loadStoreData);
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? 'dark' : 'light';
+
+  useEffect(() => {
+    const init = async () => {
+      await initDB();
+      await loadStoreData();
+    };
+    init();
+  }, []);
 
   const customTheme = {
     ...(theme === 'dark' ? DarkTheme : DefaultTheme),
@@ -27,7 +39,10 @@ export default function TabLayout() {
     <ThemeProvider value={customTheme}>
       <StatusBar style="auto" />
       <AnimatedSplashOverlay />
-      <AppTabs />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="collection" />
+      </Stack>
       <NowPlayingModal />
     </ThemeProvider>
   );

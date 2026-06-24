@@ -10,7 +10,7 @@ import MiniPlayer from '@/components/mini-player';
 const { width: screenWidth } = Dimensions.get('window');
 
 // ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://10.20.23.43:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();

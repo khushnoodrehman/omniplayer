@@ -12,7 +12,7 @@ const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
 
 // ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://10.20.23.43:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 // Helper to convert any backend value safely to a string for React Native Text components
 const safeString = (val: any, fallback = ''): string => {
@@ -117,8 +117,16 @@ const LocalAudioItem = ({ title, subtitle, onPress, onOptionsPress }: LocalAudio
 };
 
 // --- YOUTUBE ITEM (Loading State Support Ke Sath) ---
-interface YouTubeItemProps { title: string; subtitle: string; imageUri: string; onPress: () => void; isLoading?: boolean; }
-const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading }: YouTubeItemProps) => {
+interface YouTubeItemProps {
+  title: string;
+  subtitle: string;
+  imageUri: string;
+  onPress: () => void;
+  isLoading?: boolean;
+  isLiked?: boolean;
+  onLike?: () => void;
+}
+const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isLiked, onLike }: YouTubeItemProps) => {
   try {
     const colors = useTheme();
     return (
@@ -137,6 +145,16 @@ const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading }: YouTubeI
           <RNText style={[styles.ytTitle, { color: isLoading ? colors.accent : colors.text }]} numberOfLines={1}>{title}</RNText>
           <RNText style={[styles.ytSubtitle, { color: colors.textSecondary }]}>{subtitle}</RNText>
         </View>
+        {onLike && (
+          <Pressable onPress={onLike} style={{ padding: 8, marginRight: 4 }}>
+            <AppIcon
+              ios={isLiked ? 'heart.fill' : 'heart'}
+              android={isLiked ? 'heart' : 'heart-outline'}
+              size={20}
+              color={isLiked ? colors.accent : colors.textSecondary}
+            />
+          </Pressable>
+        )}
         <Pressable onPress={() => alert('Downloading track...')} style={styles.downloadButton}>
           <AppIcon ios="arrow.down.to.line" android="download-outline" size={20} color={colors.textSecondary} />
         </Pressable>
@@ -152,7 +170,7 @@ const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading }: YouTubeI
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
-  const playTrack = usePlaybackStore((state) => state.playTrack);
+  const { playTrack, toggleFavorite, favoriteTracks } = usePlaybackStore();
 
   // UI States
   const [searchText, setSearchText] = useState('');
@@ -407,8 +425,23 @@ export default function SearchScreen() {
                                   <AppIcon ios="play.fill" android="play" size={24} color={colors.playIconColor} />
                                 )}
                               </Pressable>
-                              <Pressable onPress={() => alert('Added to Favorites')} style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}>
-                                <AppIcon ios="heart" android="heart" size={20} color={colors.textSecondary} />
+                              <Pressable
+                                onPress={() => toggleFavorite({
+                                  id: topResult.id,
+                                  title: safeString(topResult.title),
+                                  artist: safeString(topResult.artist),
+                                  image: safeString(topResult.image),
+                                  duration: topResult.duration || 0,
+                                  sourceType: 'youtube'
+                                })}
+                                style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}
+                              >
+                                <AppIcon
+                                  ios={favoriteTracks.includes(topResult.id) ? 'heart.fill' : 'heart'}
+                                  android={favoriteTracks.includes(topResult.id) ? 'heart' : 'heart-outline'}
+                                  size={20}
+                                  color={favoriteTracks.includes(topResult.id) ? colors.accent : colors.textSecondary}
+                                />
                               </Pressable>
                             </View>
                           </View>
@@ -442,6 +475,15 @@ export default function SearchScreen() {
                                   imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
                                   onPress={() => handlePlayYouTubeTrack(item)}
                                   isLoading={loadingTrackId === item.id}
+                                  isLiked={favoriteTracks.includes(item.id)}
+                                  onLike={() => toggleFavorite({
+                                    id: item.id,
+                                    title: safeString(item.title),
+                                    artist: safeString(item.artist),
+                                    image: safeString(item.image),
+                                    duration: item.duration || 0,
+                                    sourceType: 'youtube'
+                                  })}
                                 />
                               );
                             } catch (err) {

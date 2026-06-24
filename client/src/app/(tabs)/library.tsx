@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
@@ -32,7 +33,8 @@ const tabs = ['Playlists', 'Songs', 'Artists & Albums', 'Folders'];
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
-  const playTrack = usePlaybackStore((state) => state.playTrack);
+  const router = useRouter();
+  const { playTrack, toggleFavorite, favoriteTracks } = usePlaybackStore();
   const [activeTab, setActiveTab] = useState('Songs');
 
   // Custom Hook use kar liya
@@ -97,6 +99,43 @@ export default function LibraryScreen() {
             <View style={[styles.storageBarBg, { backgroundColor: colors.divider }]}>
               <View style={[styles.storageBarFill, { backgroundColor: colors.accent, width: '16%' }]} />
             </View>
+          </View>
+
+          {/* Quick Access Row */}
+          <View style={styles.quickAccessRow}>
+            <Pressable
+              onPress={() => router.push('/collection?type=liked')}
+              style={({ pressed }) => [
+                styles.quickAccessCard,
+                { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
+                pressed && styles.pressed
+              ]}
+            >
+              <View style={[styles.quickAccessIconWrapper, { backgroundColor: 'rgba(255, 45, 85, 0.12)' }]}>
+                <AppIcon ios="heart.fill" android="heart" size={22} color="#ff2d55" />
+              </View>
+              <View style={{ gap: 2 }}>
+                <RNText style={[styles.quickAccessTitle, { color: colors.text }]}>Liked</RNText>
+                <RNText style={[styles.quickAccessSubtitle, { color: colors.textSecondary }]}>Songs</RNText>
+              </View>
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push('/collection?type=downloads')}
+              style={({ pressed }) => [
+                styles.quickAccessCard,
+                { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
+                pressed && styles.pressed
+              ]}
+            >
+              <View style={[styles.quickAccessIconWrapper, { backgroundColor: 'rgba(52, 199, 89, 0.12)' }]}>
+                <AppIcon ios="arrow.down.circle.fill" android="download" size={22} color="#34c759" />
+              </View>
+              <View style={{ gap: 2 }}>
+                <RNText style={[styles.quickAccessTitle, { color: colors.text }]}>Downloads</RNText>
+                <RNText style={[styles.quickAccessSubtitle, { color: colors.textSecondary }]}>Offline</RNText>
+              </View>
+            </Pressable>
           </View>
 
           {/* Material Top Tabs Navigation */}
@@ -183,12 +222,20 @@ export default function LibraryScreen() {
                         </RNText>
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <AppIcon
-                          ios="folder"
-                          android="folder"
-                          size={20}
-                          color={colors.textSecondary}
-                        />
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            toggleFavorite(localQueue[index]);
+                          }}
+                          style={{ padding: 4 }}
+                        >
+                          <AppIcon
+                            ios={favoriteTracks.includes(track.id) ? 'heart.fill' : 'heart'}
+                            android={favoriteTracks.includes(track.id) ? 'heart' : 'heart-outline'}
+                            size={20}
+                            color={favoriteTracks.includes(track.id) ? colors.accent : colors.textSecondary}
+                          />
+                        </Pressable>
                         <Pressable onPress={(e) => {
                           e.stopPropagation();
                           alert(`Options for ${track.filename}`);
@@ -334,5 +381,33 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: '#000', // Assuming accent is bright (like Spotify green), dark text works best. Change to white if needed.
     fontWeight: '700',
-  }
+  },
+  quickAccessRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  quickAccessCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  quickAccessIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickAccessTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  quickAccessSubtitle: {
+    fontSize: 11,
+  },
 });
