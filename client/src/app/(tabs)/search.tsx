@@ -7,6 +7,7 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import MiniPlayer from '@/components/mini-player';
+import { getRecentSearchesDB, addRecentSearchDB, deleteRecentSearchDB, clearAllRecentSearchesDB } from '@/services/db';
 
 const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
@@ -174,10 +175,23 @@ export default function SearchScreen() {
 
   // UI States
   const [searchText, setSearchText] = useState('');
-  const [recentSearches, setRecentSearches] = useState(['Atif Aslam', 'Lofi Beats', 'Global Top 50']);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeChip, setActiveChip] = useState('All');
   const [isBottomSheetVisible, setIsBottomSheetVisible] = useState(false);
   const [bottomSheetData, setBottomSheetData] = useState<any>(null); // To dynamicize bottom sheet later
+
+  // Load recent searches on mount
+  useEffect(() => {
+    const loadRecentSearches = async () => {
+      try {
+        const searches = await getRecentSearchesDB();
+        setRecentSearches(searches);
+      } catch (error) {
+        console.error("Error loading recent searches:", error);
+      }
+    };
+    loadRecentSearches();
+  }, []);
 
   // API States
   const [apiResults, setApiResults] = useState<any[]>([]);
@@ -230,13 +244,16 @@ export default function SearchScreen() {
   })();
 
   // 1. YouTube Search Logic
-  const handleSearchSubmit = () => {
+  const handleSearchSubmit = async () => {
     const trimmed = searchText.trim();
     if (trimmed) {
-      setRecentSearches((prev) => {
-        const filtered = prev.filter((item) => item !== trimmed);
-        return [trimmed, ...filtered].slice(0, 5);
-      });
+      try {
+        await addRecentSearchDB(trimmed);
+        const searches = await getRecentSearchesDB();
+        setRecentSearches(searches);
+      } catch (error) {
+        console.error("Error adding search query:", error);
+      }
     }
   };
 
@@ -283,8 +300,23 @@ export default function SearchScreen() {
     }
   };
 
-  const handleRemoveSearch = (itemToRemove: string) => setRecentSearches((prev) => prev.filter((item) => item !== itemToRemove));
-  const handleClearAll = () => setRecentSearches([]);
+  const handleRemoveSearch = async (itemToRemove: string) => {
+    try {
+      await deleteRecentSearchDB(itemToRemove);
+      const searches = await getRecentSearchesDB();
+      setRecentSearches(searches);
+    } catch (error) {
+      console.error("Error removing search query:", error);
+    }
+  };
+  const handleClearAll = async () => {
+    try {
+      await clearAllRecentSearchesDB();
+      setRecentSearches([]);
+    } catch (error) {
+      console.error("Error clearing search queries:", error);
+    }
+  };
 
   const isSearchingUI = searchText.length > 0;
   const topResult = apiResults.length > 0 ? apiResults[0] : null; // Dynamic top result
@@ -366,6 +398,18 @@ export default function SearchScreen() {
                   <View style={{ flexDirection: 'row', gap: 16 }}>
                     <BrowseCard title="Lo-Fi" colors={['#93000a', '#ffb4ab']} imageUri="https://lh3.googleusercontent.com/aida-public/AB6AXuBPLnXCW7m2-veRxMrx1GIDLYFiF2OSblr8PUz1fmCfovonespXMtltgr01YToIKoIxFUi-01iM1nk7LEiStAgH9ULUQjD6fVl8_hDz4nH2NByTl5QWiqFUdlWEAa3qCr9DdNAgtZWXupykOXgAqm6RSqgjCXEABoCPG6DRHPHekgwxSHHXPuIPZ3CwakLyuO1foVdYVcMVrdkVMHZ0s0mOE26MdV15ZaigTjOlXC3HDrqdQwlFTRBfG5SelLCuduPjf4KMEnRCmUpN" onPress={() => { setSearchText('Lofi Beats'); handleSearchSubmit(); }} />
                     <BrowseCard title="Podcasts" colors={['#292a2d', '#c6c6c9']} imageUri="https://lh3.googleusercontent.com/aida-public/AB6AXuCeelEhvoff9DuqfwwoL-ujxvtfTxVHiYrFYT9QjtgYzPkCK65e5vBpWEMuT_5_pdo0reI6MC_8jdJsI38AulkV1pnTEN_Zd931tQqem_F_uEGB5nnGXDleB4ZRBjL4cfHdM80vjx0fz3dAnsnKgC8y4mUmnrhls-2DCspjggrtfnz0LiFyJ8IKLy0K0hswCyF6rVBCQuiCfm7-CoFtx_Lxu18Riyhj40LNQddcAPUcQz4b9nJ-_IiB7dBia_ixSZeWqYtKcvXzwTu9" onPress={() => { setSearchText('Tech Podcast'); handleSearchSubmit(); }} />
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 16 }}>
+                    <BrowseCard title="Pop" colors={['#8F3B76', '#E07A5F']} imageUri="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=400&auto=format&fit=crop" onPress={() => { setSearchText('Pop Hits'); handleSearchSubmit(); }} />
+                    <BrowseCard title="Relax" colors={['#118AB2', '#06D6A0']} imageUri="https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?q=80&w=400&auto=format&fit=crop" onPress={() => { setSearchText('Chill Relax'); handleSearchSubmit(); }} />
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 16 }}>
+                    <BrowseCard title="Rock" colors={['#1c1c1c', '#ff2a2a']} imageUri="https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?q=80&w=400&auto=format&fit=crop" onPress={() => { setSearchText('Rock Anthems'); handleSearchSubmit(); }} />
+                    <BrowseCard title="Focus" colors={['#3F5E6B', '#97D8C4']} imageUri="https://images.unsplash.com/photo-1488190211105-8b0e65b80b4e?q=80&w=400&auto=format&fit=crop" onPress={() => { setSearchText('Focus Study'); handleSearchSubmit(); }} />
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 16 }}>
+                    <BrowseCard title="Party" colors={['#E01E3C', '#FF5A5F']} imageUri="https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=400&auto=format&fit=crop" onPress={() => { setSearchText('Party Hits'); handleSearchSubmit(); }} />
+                    <BrowseCard title="Classical" colors={['#5c3d2e', '#b85c38']} imageUri="https://images.unsplash.com/photo-1507838153414-b4b713384a76?q=80&w=400&auto=format&fit=crop" onPress={() => { setSearchText('Classical Instrumental'); handleSearchSubmit(); }} />
                   </View>
                 </View>
               </View>

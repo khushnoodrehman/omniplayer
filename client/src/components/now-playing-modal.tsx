@@ -7,6 +7,7 @@ import {
   Dimensions,
   ScrollView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -16,20 +17,20 @@ import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AppIcon } from '@/components/ui/app-icon';
 
-// 🌟 NAYA IMPORT: Hamara banaya hua Lyrics component
 import LyricsView from '@/components/lyrics-view';
+import { downloadTrackFile } from '@/services/downloader';
+import { addDownloadDB } from '@/services/db';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-// Stitch design token aliases (dark mode primary palette)
 const SURFACE_CONTAINER_HIGH = '#292a2d';
 const BORDER_WHITE_5 = 'rgba(255,255,255,0.05)';
 const BORDER_WHITE_10 = 'rgba(255,255,255,0.10)';
 const ON_SURFACE_VARIANT = '#ccc3d3';
-const PRIMARY_CONTAINER = '#bd93f9';     // play FAB bg
-const ON_PRIMARY_CONTAINER = '#4e2484'; // play FAB icon color
+const PRIMARY_CONTAINER = '#bd93f9';
+const ON_PRIMARY_CONTAINER = '#4e2484';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
-// Helper to format seconds to M:SS
 const formatTime = (secs: number) => {
   const m = Math.floor(secs / 60);
   const s = Math.floor(secs % 60);
@@ -62,6 +63,10 @@ export default function NowPlayingModal() {
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'lyrics' | 'queue'>('lyrics');
 
+  // 🌟 NAYI STATES: Download Status aur Progress ke liye
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+
   if (!currentTrack) return null;
 
   const isFavorited = favoriteTracks.includes(currentTrack.id);
@@ -74,7 +79,53 @@ export default function NowPlayingModal() {
     seek(clickRatio * duration);
   };
 
-  // Ambient glow color behind album art
+  // 🌟 ASLI HANDLER: API call aur File System logic
+  const handleStartDownload = async () => {
+    if (!currentTrack) return;
+    setDownloadStatus('downloading');
+    setDownloadProgress(0);
+
+    // Downloader service ko call kiya directly format 'm4a' aur progress callback ke sath
+    const localUri = await downloadTrackFile(currentTrack, 'm4a', (progress) => {
+      setDownloadProgress(progress);
+    });
+
+    if (localUri) {
+      // Download successful
+      setDownloadStatus('downloaded');
+
+      // Fetch lyrics to store offline
+      let lyrics = '';
+      let lyricsType = 'none';
+      try {
+        const cleanArtist = currentTrack.artist.split('•')[0].trim();
+        const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(currentTrack.title)}&artist=${encodeURIComponent(cleanArtist)}&id=${encodeURIComponent(currentTrack.id)}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.type && data.type !== 'none') {
+          lyrics = data.lyrics;
+          lyricsType = data.type;
+        }
+      } catch (err) {
+        console.error("Error fetching lyrics for offline storage:", err);
+      }
+
+      // Database mein save kiya (including lyrics)
+      await addDownloadDB(currentTrack, localUri, '', lyrics, lyricsType);
+
+      // 3 second baad icon wapas normal kardo
+      setTimeout(() => {
+        setDownloadStatus('idle');
+        setDownloadProgress(0);
+      }, 3000);
+    } else {
+      // Download failed
+      setDownloadStatus('idle');
+      setDownloadProgress(0);
+      alert("Download failed. Check server logs or internet connection.");
+    }
+  };
+
   const artGlowColor = colors.accent.replace(')', ', 0.30)').replace('rgb(', 'rgba(') ?? 'rgba(215,186,255,0.30)';
 
   return (
@@ -89,9 +140,7 @@ export default function NowPlayingModal() {
     >
       <RNHostView matchContents>
         <View style={[styles.root, { backgroundColor: colors.background }]}>
-          {/* ═══ LAYER 0: Immersive full-bleed gradient background ═══ */}
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            {/* Layer 1: Top-to-bottom primary purple wash — full width */}
             <LinearGradient
               colors={[
                 'rgba(215,186,255,0.28)',
@@ -101,14 +150,12 @@ export default function NowPlayingModal() {
               locations={[0, 0.35, 0.75]}
               style={StyleSheet.absoluteFill}
             />
-            {/* Layer 2: Left-to-right diagonal purple accent — covers entire top half */}
             <LinearGradient
               colors={['rgba(189,147,249,0.18)', 'rgba(0,0,0,0)']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
-            {/* Layer 3: Bottom-right teal accent — full width diagonal */}
             <LinearGradient
               colors={['rgba(0,0,0,0)', `rgba(0,218,243,0.06)`]}
               start={{ x: 0, y: 0 }}
@@ -117,7 +164,6 @@ export default function NowPlayingModal() {
             />
           </View>
 
-          {/* ═══ MAIN CANVAS ═══ */}
           <View
             style={[
               styles.mainCanvas,
@@ -127,10 +173,8 @@ export default function NowPlayingModal() {
               },
             ]}
           >
-            {/* ── Header ── */}
             <View style={styles.header}>
               <View style={styles.headerRow}>
-                {/* Source badge */}
                 <View
                   style={[
                     styles.sourceBadge,
@@ -165,7 +209,6 @@ export default function NowPlayingModal() {
               </View>
             </View>
 
-            {/* ── Album Art ── */}
             <View style={styles.artSection}>
               <View style={styles.artCardContainer}>
                 <View
@@ -182,7 +225,6 @@ export default function NowPlayingModal() {
               </View>
             </View>
 
-            {/* ── Track Info ── */}
             <View style={styles.infoSection}>
               <View style={styles.infoRow}>
                 <View style={{ flex: 1, gap: 4 }}>
@@ -206,24 +248,44 @@ export default function NowPlayingModal() {
                       color={isFavorited ? colors.pulseDot : ON_SURFACE_VARIANT}
                     />
                   </Pressable>
+
+                  {/* 🌟 YAHAN CHANGE KIYA HAI: Direct download & progress indicator */}
                   <Pressable
-                    onPress={() => alert('Download Offline')}
+                    onPress={() => {
+                      if (downloadStatus === 'idle') handleStartDownload();
+                    }}
                     style={styles.iconButton}
                   >
-                    <AppIcon
-                      ios="arrow.down.to.line"
-                      android="download-outline"
-                      size={22}
-                      color={ON_SURFACE_VARIANT}
-                    />
+                    {downloadStatus === 'idle' && (
+                      <AppIcon
+                        ios="arrow.down.to.line"
+                        android="download-outline"
+                        size={22}
+                        color={ON_SURFACE_VARIANT}
+                      />
+                    )}
+                    {downloadStatus === 'downloading' && (
+                      <View style={styles.progressContainer}>
+                        <ActivityIndicator size="small" color={colors.accent} />
+                        <RNText style={[styles.progressText, { color: colors.accent }]}>
+                          {Math.round(downloadProgress * 100)}%
+                        </RNText>
+                      </View>
+                    )}
+                    {downloadStatus === 'downloaded' && (
+                      <AppIcon
+                        ios="checkmark.circle.fill"
+                        android="checkmark-circle"
+                        size={22}
+                        color={colors.accent}
+                      />
+                    )}
                   </Pressable>
                 </View>
               </View>
             </View>
 
-            {/* ── Playback Controls & Seekbar ── */}
             <View style={styles.controlsSection}>
-              {/* Seekbar */}
               <Pressable onPress={handleSeekBarPress} style={styles.seekbarContainer}>
                 <View style={[styles.seekbarBg, { backgroundColor: 'rgba(204,195,211,0.20)' }]}>
                   <View
@@ -235,7 +297,6 @@ export default function NowPlayingModal() {
                 </View>
               </Pressable>
 
-              {/* Timestamps */}
               <View style={styles.timestampsRow}>
                 <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
                   {formatTime(position)}
@@ -245,7 +306,6 @@ export default function NowPlayingModal() {
                 </RNText>
               </View>
 
-              {/* Playback Buttons */}
               <View style={styles.buttonRow}>
                 <Pressable onPress={toggleShuffle}>
                   <AppIcon
@@ -265,7 +325,6 @@ export default function NowPlayingModal() {
                   />
                 </Pressable>
 
-                {/* FAB */}
                 <Pressable
                   onPress={togglePlay}
                   style={[
@@ -312,15 +371,12 @@ export default function NowPlayingModal() {
               </View>
             </View>
 
-            {/* Spacer */}
             <View style={{ flex: 1 }} />
 
-            {/* ── Lyrics Peek Bar ── */}
             <Pressable
               style={styles.lyricsPeekContainer}
               onPress={() => setIsLyricsExpanded(true)}
             >
-              {/* Glass blur background */}
               <View style={styles.lyricsPeekGlass} />
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
                 <AppIcon
@@ -345,7 +401,6 @@ export default function NowPlayingModal() {
             </Pressable>
           </View>
 
-          {/* ═══ EXPANDED LYRICS / QUEUE DRAWER ═══ */}
           {isLyricsExpanded && (
             <View
               style={[
@@ -402,7 +457,6 @@ export default function NowPlayingModal() {
                 </View>
               </View>
 
-              {/* 🌟 YAHAN CHANGE KIYA HAI: Lyrics component render ho raha hai */}
               <View style={{ flex: 1 }}>
                 {activeTab === 'lyrics' ? (
                   <LyricsView />
@@ -413,7 +467,6 @@ export default function NowPlayingModal() {
                   >
                     <View style={{ gap: 16 }}>
                       <RNText style={[styles.lyricTitle, { color: ON_SURFACE_VARIANT }]}>QUEUE</RNText>
-                      {/* Now Playing */}
                       <View
                         style={[
                           styles.queueItem,
@@ -439,13 +492,13 @@ export default function NowPlayingModal() {
                         Next Songs
                       </RNText>
 
-                      {/* Queue tracks ko dynamic banane ke liye yahan tum store.queue map kar sakte ho */}
                     </View>
                   </ScrollView>
                 )}
               </View>
             </View>
           )}
+
         </View>
       </RNHostView>
     </BottomSheet>
@@ -458,7 +511,6 @@ const styles = StyleSheet.create({
     height: screenHeight,
     overflow: 'hidden',
   },
-
   mainCanvas: {
     flex: 1,
     paddingHorizontal: 16,
@@ -473,7 +525,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 48,
   },
-
   sourceBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -495,7 +546,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   artSection: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -529,7 +579,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
   },
-
   infoSection: {
     marginBottom: 12,
   },
@@ -559,7 +608,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
+  progressContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 44,
+    height: 44,
+  },
+  progressText: {
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   controlsSection: {
     width: '100%',
   },
@@ -603,7 +662,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   lyricsPeekContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -633,7 +691,6 @@ const styles = StyleSheet.create({
     flex: 1,
     opacity: 0.85,
   },
-
   expandedDrawer: {
     position: 'absolute',
     left: 0,
@@ -687,7 +744,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   lyricTitle: {
     fontSize: 20,
     fontWeight: '700',

@@ -1,8 +1,13 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from ytmusicapi import YTMusic
 import yt_dlp 
 import requests
+import concurrent.futures
+import threading
+import time
+
+import glob
 
 import os
 import urllib.parse
@@ -55,11 +60,16 @@ def get_stream_url():
 
     # yt-dlp ki settings - sirf audio aur direct link ke liye
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio/best', # Mobile ke liye m4a best hai
-        'quiet': True,             # Fuzool terminal logs hide karega
-        'no_warnings': True,
-        'skip_download': True,     # Gaana download NAHI karna, sirf link chahiye
+        'format': 'bestaudio', 
+        'cookiefile': 'cookies.txt',
+        'quiet': True,
         'noplaylist': True,
+        'js_runtimes': {'node': {}},
+        'remote_components': ['ejs:github'],
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
     }
 
     try:
@@ -241,7 +251,7 @@ def get_lyrics():
     try:
         if clean_artist:
             lrc_url = f"https://lrclib.net/api/get?track_name={search_title}&artist_name={clean_artist}"
-            response = requests.get(lrc_url, timeout=10)
+            response = requests.get(lrc_url, timeout=15)
             if response.status_code == 200:
                 data = response.json()
                 if data.get('syncedLyrics'):
@@ -250,7 +260,7 @@ def get_lyrics():
                     return jsonify({"type": "static", "lyrics": data['plainLyrics'], "source": "lrclib"})
         
         search_url = f"https://lrclib.net/api/search?q={search_title} {clean_artist}".strip()
-        search_res = requests.get(search_url, timeout=10)
+        search_res = requests.get(search_url, timeout=15)
         
         if search_res.status_code == 200:
             search_data = search_res.json()
@@ -270,7 +280,8 @@ def get_lyrics():
     if track_id and not track_id.isdigit() and not track_id.startswith('file://'):
         try:
             watch = ytmusic.get_watch_playlist(videoId=track_id)
-            lyrics_id = watch.get('lyrics')
+            if watch: # 🌟 Yeh check zaroori hai
+                lyrics_id = watch.get('lyrics')
             if lyrics_id:
                 lyrics_dict = ytmusic.get_lyrics(lyrics_id)
                 return jsonify({"type": "static", "lyrics": lyrics_dict.get('lyrics', ''), "source": "youtube"})
@@ -278,6 +289,233 @@ def get_lyrics():
             print(f"YouTube Lyrics API Error: {e}")
 
     return jsonify({"type": "none", "lyrics": "Lyrics not available for this track."})
+
+
+# ==========================================
+# 🌟 FILE CLEANUP HELPERS (To prevent accumulation on server)
+# ==========================================
+def delay_delete(track_id, download_dir, delay=15):
+    time.sleep(delay)
+    try:
+        search_pattern = f"{download_dir}/{track_id}.*"
+        for f in glob.glob(search_pattern):
+            if os.path.exists(f):
+                os.remove(f)
+                print(f"[Cleanup Thread] Deleted temporary server file: {f}")
+    except Exception as e:
+        print(f"[Cleanup Thread] Error during file cleanup: {e}")
+
+def cleanup_old_files(download_dir, max_age_seconds=60):
+    try:
+        now = time.time()
+        for f in glob.glob(f"{download_dir}/*"):
+            if os.path.isfile(f):
+                file_age = now - os.path.getmtime(f)
+                if file_age > max_age_seconds:
+                    os.remove(f)
+                    print(f"[Cleanup GC] Removed old temp file: {f}")
+    except Exception as e:
+        print(f"[Cleanup GC] Error cleaning old files: {e}")
+
+
+# ==========================================
+# 🌟 LYRICS FETCH & EMBED HELPERS
+# ==========================================
+def fetch_lyrics_raw(track_name, artist_name, track_id=None):
+    if not track_name:
+        return None
+
+    clean_artist = artist_name.split('•')[0].strip() if artist_name and artist_name != 'Local Audio' else ""
+    search_title = track_name.split('-')[-1].strip() if 'Local Audio' in (artist_name or '') else track_name
+
+    # 1. LRCLIB (Synced Lyrics or Plain Lyrics)
+    try:
+        if clean_artist:
+            lrc_url = f"https://lrclib.net/api/get?track_name={urllib.parse.quote(search_title)}&artist_name={urllib.parse.quote(clean_artist)}"
+            response = requests.get(lrc_url, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('syncedLyrics'):
+                    return data['syncedLyrics']
+                elif data.get('plainLyrics'):
+                    return data['plainLyrics']
+        
+        search_url = f"https://lrclib.net/api/search?q={urllib.parse.quote(search_title + ' ' + clean_artist)}".strip()
+        search_res = requests.get(search_url, timeout=15)
+        if search_res.status_code == 200:
+            search_data = search_res.json()
+            if search_data and isinstance(search_data, list):
+                for item in search_data:
+                    if item.get('syncedLyrics'):
+                        return item['syncedLyrics']
+                if search_data[0].get('plainLyrics'):
+                    return search_data[0]['plainLyrics']
+    except Exception as e:
+        print(f"LRCLIB fetch error during download: {e}")
+
+    # 2. YT Music Fallback
+    if track_id and not track_id.isdigit() and not track_id.startswith('file://'):
+        try:
+            watch = ytmusic.get_watch_playlist(videoId=track_id)
+            lyrics_id = watch.get('lyrics') if watch else None
+            if lyrics_id:
+                lyrics_dict = ytmusic.get_lyrics(lyrics_id)
+                return lyrics_dict.get('lyrics', '')
+        except Exception as e:
+            print(f"YouTube Lyrics fetch error during download: {e}")
+
+    return None
+
+def embed_lyrics_in_file(file_path, lyrics_text):
+    try:
+        audiofile = MutagenFile(file_path)
+        if audiofile is None:
+            print(f"[LyricsEmbedder] Could not load audio file with Mutagen: {file_path}")
+            return False
+
+        from mutagen.mp4 import MP4
+        from mutagen.mp3 import MP3
+        from mutagen.flac import FLAC
+        from mutagen.id3 import USLT
+
+        if isinstance(audiofile, MP4):
+            audiofile['\xa9lyr'] = [lyrics_text]
+            audiofile.save()
+            print(f"[LyricsEmbedder] ✅ Successfully embedded lyrics in M4A: {file_path}")
+            return True
+        elif isinstance(audiofile, MP3):
+            try:
+                audiofile.add_tags()
+            except Exception:
+                pass
+            audiofile.tags.add(USLT(encoding=3, lang='eng', desc='Lyrics', text=lyrics_text))
+            audiofile.save()
+            print(f"[LyricsEmbedder] ✅ Successfully embedded lyrics in MP3: {file_path}")
+            return True
+        elif isinstance(audiofile, FLAC):
+            audiofile['lyrics'] = [lyrics_text]
+            audiofile.save()
+            print(f"[LyricsEmbedder] ✅ Successfully embedded lyrics in FLAC: {file_path}")
+            return True
+        else:
+            if hasattr(audiofile, 'tags') and audiofile.tags is not None:
+                try:
+                    audiofile['lyrics'] = [lyrics_text]
+                    audiofile.save()
+                    print(f"[LyricsEmbedder] ✅ Successfully embedded lyrics using fallback tag in: {file_path}")
+                    return True
+                except Exception:
+                    pass
+            print(f"[LyricsEmbedder] ❌ Unsupported file type for lyrics embedding: {type(audiofile)}")
+            return False
+    except Exception as e:
+        print(f"[LyricsEmbedder] ❌ Error embedding lyrics: {e}")
+        return False
+
+
+# ==========================================
+# 🌟 DYNAMIC DOWNLOAD ENGINE
+# ==========================================
+@app.route('/api/download', methods=['GET'])
+def download_track():
+    track_id = request.args.get('id')
+    audio_format = request.args.get('format', 'm4a').lower() 
+    track_title = request.args.get('title')
+    track_artist = request.args.get('artist')
+
+    if not track_id:
+        return jsonify({"error": "Track ID is required"}), 400
+
+    # Temporary folder jahan file process hogi
+    download_dir = 'temp_downloads'
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
+    # Clean up any leftover old files in the directory
+    cleanup_old_files(download_dir)
+
+    # Choose correct direct stream format to skip transcoding
+    ydl_format = 'bestaudio[ext=m4a]/bestaudio/best' if audio_format == 'm4a' else 'bestaudio[ext=webm]/bestaudio/best'
+
+    # yt-dlp ki dynamic options configuration (Direct copy remux format)
+    ydl_opts = {
+        'format': ydl_format,
+        'outtmpl': f'{download_dir}/{track_id}.%(ext)s',
+        'writethumbnail': True,
+        'cookiefile': 'cookies.txt', # Cover art download karne ke liye
+        'js_runtimes': {'node': {}},
+        'remote_components': ['ejs:github'],
+        'postprocessors': [
+            {
+                # 1. Metadata Inject (Title, Artist waghera)
+                'key': 'FFmpegMetadata',
+            },
+            {
+                # 2. Album Art Inject
+                'key': 'EmbedThumbnail',
+            }
+        ],
+        'quiet': False, # Console mein progress dekhne ke liye
+    }
+
+    try:
+        # YouTube URL banayein
+        target_url = f"https://www.youtube.com/watch?v={track_id}"
+        lyrics_text = None
+        
+        # Parallelize: Fetch lyrics concurrently while downloading audio
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            lyrics_future = executor.submit(fetch_lyrics_raw, track_title, track_artist, track_id) if track_title else None
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                print(f"Downloading {track_id} in direct-copy {audio_format}...")
+                ydl.download([target_url])
+                
+            if lyrics_future:
+                try:
+                    lyrics_text = lyrics_future.result(timeout=15)
+                except Exception as e:
+                    print(f"[Downloader] Lyrics fetch timed out or failed: {e}")
+            
+        # Download hone ke baad, file dhoondna (kyunki extension change ho sakti hai)
+        # Hum wildcard (*) use kar rahe hain taake jo bhi final file bani ho, wo mil jaye
+        search_pattern = f"{download_dir}/{track_id}.*"
+        downloaded_files = glob.glob(search_pattern)
+        
+        # Thumbnail files (.jpg, .webp) ko filter out kar rahe hain, sirf audio chahiye
+        audio_file = None
+        for file in downloaded_files:
+            if not file.endswith(('.jpg', '.webp', '.png')):
+                audio_file = file
+                break
+                
+        if audio_file:
+            # Embed lyrics if fetched
+            if lyrics_text:
+                print(f"[Downloader] Embedding fetched lyrics in: {audio_file}")
+                embed_lyrics_in_file(audio_file, lyrics_text)
+            else:
+                print("[Downloader] No lyrics found to embed.")
+
+            # File ko frontend ko bhejna
+            response = send_file(
+                audio_file, 
+                as_attachment=True, 
+                download_name=os.path.basename(audio_file),
+                mimetype=f'audio/{audio_format}'
+            )
+
+            # Start background thread to delete the temp files after 15 seconds
+            # This bypasses the Windows file lock issues that occur when deleting immediately
+            threading.Thread(target=delay_delete, args=(track_id, download_dir)).start()
+
+            return response
+        else:
+            return jsonify({"error": "File conversion failed"}), 500
+
+    except Exception as e:
+        print(f"Download Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 

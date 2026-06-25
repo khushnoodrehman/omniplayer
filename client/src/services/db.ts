@@ -68,7 +68,16 @@ export const initDB = async () => {
         searchedAt INTEGER
       );
     `);
-    console.log('✅ SQLite Database v2 Initialized with URI support!');
+    
+    // Alter table if columns don't exist (Migration for lyrics)
+    try {
+      await db.execAsync('ALTER TABLE downloads ADD COLUMN lyrics TEXT;');
+    } catch (e) { /* Column already exists */ }
+    try {
+      await db.execAsync('ALTER TABLE downloads ADD COLUMN lyricsType TEXT;');
+    } catch (e) { /* Column already exists */ }
+
+    console.log('✅ SQLite Database v2 Initialized with URI and Lyrics support!');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
   }
@@ -212,6 +221,66 @@ export const getPlaylistTracksDB = async (playlistId: string): Promise<Track[]> 
   } catch (error) {
     console.error('Error getting playlist tracks:', error);
     return [];
+  }
+};
+
+// ==========================================
+// 🌟 DOWNLOADS FUNCTIONS
+// ==========================================
+export const addDownloadDB = async (track: Track, localPath: string, fileSize = '', lyrics = '', lyricsType = 'none') => {
+  try {
+    await db.runAsync(
+      'INSERT OR REPLACE INTO downloads (id, title, artist, image, duration, localPath, fileSize, lyrics, lyricsType) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [track.id, track.title, track.artist, track.image, track.duration, localPath, fileSize, lyrics, lyricsType]
+    );
+    console.log(`✅ Download added to DB: ${track.title} -> ${localPath} (Lyrics: ${lyricsType})`);
+  } catch (error) {
+    console.error('Error adding download to DB:', error);
+  }
+};
+
+export const getDownloadDB = async (id: string): Promise<{ id: string, title: string, artist: string, image: string, duration: number, localPath: string, fileSize: string, lyrics?: string, lyricsType?: string } | null> => {
+  try {
+    const row = await db.getFirstAsync<{ id: string, title: string, artist: string, image: string, duration: number, localPath: string, fileSize: string, lyrics?: string, lyricsType?: string }>(
+      'SELECT * FROM downloads WHERE id = ?',
+      [id]
+    );
+    return row || null;
+  } catch (error) {
+    console.error('Error getting download from DB:', error);
+    return null;
+  }
+};
+
+export const getDownloadsDB = async (): Promise<Track[]> => {
+  try {
+    const rows = await db.getAllAsync<{ id: string, title: string, artist: string, image: string, duration: number, localPath: string, fileSize: string, lyrics?: string, lyricsType?: string }>(
+      'SELECT * FROM downloads'
+    );
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      artist: r.artist,
+      image: r.image,
+      duration: r.duration,
+      sourceType: 'local',
+      uri: r.localPath,
+      fileSize: r.fileSize,
+      lyrics: r.lyrics,
+      lyricsType: r.lyricsType
+    }));
+  } catch (error) {
+    console.error('Error getting downloads from DB:', error);
+    return [];
+  }
+};
+
+export const removeDownloadDB = async (id: string) => {
+  try {
+    await db.runAsync('DELETE FROM downloads WHERE id = ?', [id]);
+    console.log(`✅ Download deleted from DB: ${id}`);
+  } catch (error) {
+    console.error('Error removing download from DB:', error);
   }
 };
 

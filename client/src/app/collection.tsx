@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text as RNText, Pressable, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text as RNText, Pressable, ScrollView, Dimensions, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
-import { getFavoritesDB } from '@/services/db';
+import { getFavoritesDB, getDownloadsDB, removeDownloadDB, removeFavoriteDB } from '@/services/db';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -51,9 +52,8 @@ export default function CollectionScreen() {
                     const favs = await getFavoritesDB();
                     setTracks(favs);
                 } else {
-                    // Future: Fetch from downloadsDB
-                    // setTracks(await getDownloadsDB());
-                    setTracks([]);
+                    const dls = await getDownloadsDB();
+                    setTracks(dls);
                 }
             } catch (error) {
                 console.error("Error fetching collection:", error);
@@ -64,6 +64,56 @@ export default function CollectionScreen() {
 
         fetchCollection();
     }, [type, favoriteTracks]); // favoriteTracks dependency taake real-time update ho jab dil pe click ho
+
+    const handleDeleteTrack = async (track: Track) => {
+        try {
+            await removeDownloadDB(track.id);
+            if (track.uri) {
+                const fileInfo = await FileSystem.getInfoAsync(track.uri);
+                if (fileInfo.exists) {
+                    await FileSystem.deleteAsync(track.uri);
+                    console.log(`[Collection] Deleted track file from disk: ${track.uri}`);
+                }
+            }
+            setTracks((prev) => prev.filter((t) => t.id !== track.id));
+        } catch (error) {
+            console.error("Error deleting track:", error);
+            Alert.alert("Error", "Failed to delete the track file.");
+        }
+    };
+
+    const handleTrackOptions = (track: Track) => {
+        if (!isLiked) {
+            Alert.alert(
+                "Delete Download",
+                `Are you sure you want to delete "${track.title}" from your device?`,
+                [
+                    { text: "Cancel", style: "cancel" },
+                    { 
+                        text: "Delete", 
+                        style: "destructive", 
+                        onPress: () => handleDeleteTrack(track) 
+                    }
+                ]
+            );
+        } else {
+            Alert.alert(
+                "Remove Favorite",
+                `Remove "${track.title}" from Liked Songs?`,
+                [
+                    { text: "Cancel", style: "cancel" },
+                    { 
+                        text: "Remove", 
+                        style: "destructive", 
+                        onPress: async () => {
+                            await removeFavoriteDB(track.id);
+                            setTracks((prev) => prev.filter((t) => t.id !== track.id));
+                        } 
+                    }
+                ]
+            );
+        }
+    };
 
     const totalDuration = tracks.reduce((acc, track) => acc + (track.duration || 0), 0);
     const formattedTotalDuration = formatDuration(totalDuration);
@@ -187,7 +237,10 @@ export default function CollectionScreen() {
                                         </View>
                                     </View>
 
-                                    <Pressable style={styles.trackMoreButton}>
+                                    <Pressable 
+                                        onPress={() => handleTrackOptions(track)}
+                                        style={styles.trackMoreButton}
+                                    >
                                         <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.text} />
                                     </Pressable>
                                 </Pressable>

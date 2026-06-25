@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { createAudioPlayer, AudioPlayer, setAudioModeAsync } from 'expo-audio';
 // 🌟 DATABASE IMPORTS ADD KIYE HAIN
-import { addFavoriteDB, removeFavoriteDB, getFavoritesDB, addToHistoryDB, getHistoryDB } from '@/services/db';
+import { addFavoriteDB, removeFavoriteDB, getFavoritesDB, addToHistoryDB, getHistoryDB, getDownloadDB } from '@/services/db';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const BACKEND_URL = 'http://192.168.43.179:5000';
 
@@ -33,8 +34,8 @@ interface PlaybackState {
     isPlayerVisible: boolean;
     isShuffle: boolean;
     isRepeat: boolean;
-    favoriteTracks: string[]; // Sirf IDs store karenge for quick checking
-    history: Track[];         // UI mein history dikhane ke liye
+    favoriteTracks: string[];
+    history: Track[];
 
     // 🌟 LYRICS CACHING STATE
     currentLyrics: ParsedLyric[];
@@ -51,7 +52,7 @@ interface PlaybackState {
     toggleShuffle: () => void;
     toggleRepeat: () => void;
     loadStoreData: () => Promise<void>;
-    fetchLyricsForTrack: (track: Track) => Promise<void>; // 🌟 FETCH LYRICS FUNCTION
+    fetchLyricsForTrack: (track: Track) => Promise<void>;
 }
 
 let playerInstance: AudioPlayer | null = null;
@@ -75,7 +76,6 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     isLyricsLoading: false,
     lyricsError: null,
 
-    // 🌟 APP START HOTEY HI YE FUNCTION CHALEGA
     loadStoreData: async () => {
         try {
             const favs = await getFavoritesDB();
@@ -89,37 +89,59 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         }
     },
 
-    // 🌟 FETCH LYRICS FUNCTION
     fetchLyricsForTrack: async (track: Track) => {
         set({ isLyricsLoading: true, lyricsError: null, currentLyrics: [] });
         try {
+            // Check downloads database for offline cached lyrics
+            try {
+                const download = await getDownloadDB(track.id);
+                if (download && download.lyrics && download.lyricsType && download.lyricsType !== 'none') {
+                    console.log(`[PlaybackStore] Using offline cached lyrics for: ${track.title}`);
+                    if (download.lyricsType === 'synced') {
+                        const parseLRC = (lrcText: string): ParsedLyric[] => {
+                            const lines = lrcText.split('\n');
+                            const parsed: ParsedLyric[] = [];
+                            const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\]/;
+                            lines.forEach(line => {
+                                const match = line.match(timeRegex);
+                                if (match) {
+                                    const min = parseInt(match[1], 10);
+                                    const sec = parseFloat(match[2]);
+                                    parsed.push({ time: (min * 60) + sec, text: line.replace(timeRegex, '').trim() });
+                                }
+                            });
+                            return parsed;
+                        };
+                        set({ currentLyrics: parseLRC(download.lyrics), isLyricsLoading: false });
+                    } else {
+                        set({ currentLyrics: [{ time: 0, text: download.lyrics }], isLyricsLoading: false });
+                    }
+                    return;
+                }
+            } catch (dbErr) {
+                console.error("[PlaybackStore] Error checking downloads DB for lyrics:", dbErr);
+            }
+
             let sendTitle = track.title;
             let sendArtist = track.artist;
 
-            // 🌟 LOCAL SONGS KE LIYE AUTOMATIC CLEANING LOGIC
             if (track.sourceType === 'local') {
                 if (track.title.includes(' - ')) {
                     const parts = track.title.split(' - ');
-                    // Agar "Artist - Title" format hai
-                    sendArtist = parts[0].strip ? parts[0].strip() : parts[0].trim();
-                    sendTitle = parts[1].strip ? parts[1].strip() : parts[1].trim();
-
-                    // File extension (.mp3, .flac, .m4a) remove karo
+                    sendArtist = parts[0].trim();
+                    sendTitle = parts[1].trim();
                     sendTitle = sendTitle.replace(/\.(mp3|flac|m4a|ogg)$/i, '');
-                    // Shuru ke numbers (like 03.) remove karo artist se
                     sendArtist = sendArtist.replace(/^\d+\.?\s*/, '');
                 } else {
                     sendTitle = track.title.replace(/\.(mp3|flac|m4a|ogg)$/i, '');
-                    sendArtist = ''; // Fallback agar artist ka pata na chale
+                    sendArtist = '';
                 }
             }
 
-            // Target ID sirf online ke liye bhejenge, local ke liye khali string
             const targetId = track.sourceType === 'youtube' ? track.id : '';
 
             const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(sendTitle)}&artist=${encodeURIComponent(sendArtist)}&id=${encodeURIComponent(targetId)}`;
 
-            // 🌟 CLIENT TERMINAL LOG FOR DEBUGGING
             console.log(`[Zustand] Outgoing Lyrics Request -> Title: "${sendTitle}" | Artist: "${sendArtist}"`);
 
             const response = await fetch(url);
@@ -180,17 +202,34 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 isPlaying: true
             });
 
-            // 🌟 GAANA PLAY HOTEY HI HISTORY MEIN SAVE KARO AUR LYRICS MANGWAO
             addToHistoryDB(track);
-            get().fetchLyricsForTrack(track); // 🌟 FETCH LYRICS CALL
+            get().fetchLyricsForTrack(track);
 
             set((state) => {
                 const newHistory = [track, ...state.history.filter(t => t.id !== track.id)].slice(0, 30);
                 return { history: newHistory };
             });
 
-            // DYNAMIC URL FETCHING
-            let streamUrl = track.uri;
+            // Check if track has been downloaded locally
+            let streamUrl: string | undefined = track.sourceType === 'youtube' ? undefined : track.uri;
+
+            if (track.sourceType === 'youtube') {
+                try {
+                    const download = await getDownloadDB(track.id);
+                    if (download && download.localPath) {
+                        const fileInfo = await FileSystem.getInfoAsync(download.localPath);
+                        if (fileInfo.exists) {
+                            streamUrl = download.localPath;
+                            track.uri = streamUrl; // Update session memory
+                            console.log(`[PlaybackStore] Playing local downloaded file: ${streamUrl}`);
+                        } else {
+                            console.warn(`[PlaybackStore] Downloaded file not found at: ${download.localPath}, falling back to stream.`);
+                        }
+                    }
+                } catch (dbErr) {
+                    console.error("[PlaybackStore] Error checking downloads DB:", dbErr);
+                }
+            }
 
             if (!streamUrl && track.sourceType === 'youtube') {
                 try {
@@ -198,7 +237,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     const data = await response.json();
                     if (data.stream_url) {
                         streamUrl = data.stream_url;
-                        track.uri = streamUrl;
+                        track.uri = streamUrl; // Update session memory
                     }
                 } catch (err) {
                     console.error("Store stream fetch error:", err);
@@ -298,17 +337,16 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
     setPlayerVisible: (visible) => set({ isPlayerVisible: visible }),
 
-    // 🌟 DIL (HEART) PAR CLICK KARNE SE SQLITE MEIN BHI SAVE/REMOVE HOGA
     toggleFavorite: async (track: Track) => {
         const { favoriteTracks } = get();
         const isFav = favoriteTracks.includes(track.id);
 
         if (isFav) {
-            await removeFavoriteDB(track.id); // DB se hatao
-            set({ favoriteTracks: favoriteTracks.filter(id => id !== track.id) }); // State se hatao
+            await removeFavoriteDB(track.id);
+            set({ favoriteTracks: favoriteTracks.filter(id => id !== track.id) });
         } else {
-            await addFavoriteDB(track); // DB mein dalo
-            set({ favoriteTracks: [...favoriteTracks, track.id] }); // State mein dalo
+            await addFavoriteDB(track);
+            set({ favoriteTracks: [...favoriteTracks, track.id] });
         }
     },
 

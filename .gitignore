@@ -46,3 +46,6 @@ server/.ipynb_checkpoints/
 Thumbs.db
 .vscode/
 .idea/
+
+server/cookies.txt
+server/temp_downloads/
