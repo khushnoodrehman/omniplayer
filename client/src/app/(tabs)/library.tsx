@@ -34,7 +34,9 @@ export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
   const router = useRouter();
-  const { playTrack, toggleFavorite, favoriteTracks } = usePlaybackStore();
+  const playTrack = usePlaybackStore((state) => state.playTrack);
+  const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
+  const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
   const [activeTab, setActiveTab] = useState('Songs');
 
   // Custom Hook use kar liya

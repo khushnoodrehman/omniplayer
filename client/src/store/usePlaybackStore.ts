@@ -254,19 +254,23 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 shouldPlayInBackground: true,
             });
 
-            playerInstance = createAudioPlayer(streamUrl);
+            playerInstance = createAudioPlayer(streamUrl, {
+                updateInterval: 1000 // Flood prevention: update state once per second
+            });
 
             statusSubscription = playerInstance.addListener('playbackStatusUpdate', (status) => {
-                if (status.isLoaded) {
-                    set({
-                        position: Math.floor(status.currentTime || 0),
-                        duration: Math.floor(status.duration || track.duration),
-                        isPlaying: status.playing,
-                    });
+                const curTime = status.currentTime !== undefined ? status.currentTime : 0;
+                const dur = status.duration !== undefined ? status.duration : (track.duration || 0);
+                const playingState = status.playbackState === 'playing' || !!status.playing;
 
-                    if (status.didJustFinish) {
-                        get().playNext();
-                    }
+                set({
+                    position: Math.floor(curTime),
+                    duration: Math.floor(dur),
+                    isPlaying: playingState,
+                });
+
+                if (status.playbackState === 'ended' || status.didJustFinish) {
+                    get().playNext();
                 }
             });
 

@@ -1,9 +1,11 @@
-import React from 'react';
-import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, Alert, Switch, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import MiniPlayer from '@/components/mini-player';
+import YTAuthModal from '@/components/yt-auth-modal'; // 🌟 Auth Modal Import
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -43,9 +45,109 @@ const SettingRow = ({ iosIcon, androidIcon, title, value, onPress }: SettingRowP
   );
 };
 
+interface SettingToggleRowProps {
+  iosIcon: string;
+  androidIcon: any;
+  title: string;
+  value: boolean;
+  onValueChange: (val: boolean) => void;
+}
+
+const SettingToggleRow = ({ iosIcon, androidIcon, title, value, onValueChange }: SettingToggleRowProps) => {
+  const colors = useTheme();
+  return (
+    <View
+      style={[
+        styles.settingRow,
+        { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }
+      ]}
+    >
+      <View style={[styles.settingIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
+        <AppIcon ios={iosIcon} android={androidIcon} size={20} color={colors.accent} />
+      </View>
+      <RNText style={[styles.settingTitle, { color: colors.text }]}>{title}</RNText>
+      <View style={{ flex: 1 }} />
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.cardBorder, true: colors.accent }}
+        thumbColor={Platform.OS === 'ios' ? undefined : '#fff'}
+      />
+    </View>
+  );
+};
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
+
+  // 🌟 Auth Modal States
+  const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
+  const [isYTConnected, setIsYTConnected] = useState(false);
+  const [showSpeedDial, setShowSpeedDial] = useState(true);
+
+  // Check storage status on mount
+  useEffect(() => {
+    const checkYTAuth = async () => {
+      try {
+        const cookies = await AsyncStorage.getItem('yt_cookies');
+        console.log("[SettingsScreen] Retrieved yt_cookies from AsyncStorage:", cookies ? "Cookies Exist (length: " + cookies.length + ")" : "No Cookies Found");
+        setIsYTConnected(!!cookies);
+      } catch (err) {
+        console.error("Failed to read yt_cookies from AsyncStorage", err);
+      }
+    };
+    checkYTAuth();
+
+    const loadSpeedDialSetting = async () => {
+      try {
+        const val = await AsyncStorage.getItem('settings_show_speed_dial');
+        if (val !== null) {
+          setShowSpeedDial(val === 'true');
+        }
+      } catch (err) {
+        console.error("Failed to load settings_show_speed_dial", err);
+      }
+    };
+    loadSpeedDialSetting();
+  }, []);
+
+  const handleToggleSpeedDial = async (newVal: boolean) => {
+    setShowSpeedDial(newVal);
+    try {
+      await AsyncStorage.setItem('settings_show_speed_dial', String(newVal));
+    } catch (err) {
+      console.error("Failed to save settings_show_speed_dial", err);
+    }
+  };
+
+  const handlePressYT = async () => {
+    if (!isYTConnected) {
+      setIsAuthModalVisible(true);
+    } else {
+      Alert.alert(
+        "Disconnect YouTube Music",
+        "Are you sure you want to disconnect your YouTube Music account?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Disconnect",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                // Logout ya Clear par ye chalayein
+                await AsyncStorage.removeItem('yt_cookies');
+                await AsyncStorage.clear(); // Ye sab kuch saaf kar dega taake koi purana token na bache
+                setIsYTConnected(false);
+              } catch (err) {
+                console.error("Failed to disconnect YouTube Music", err);
+              }
+            }
+          }
+        ]
+      );
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 16), backgroundColor: colors.background }]}>
@@ -54,7 +156,7 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ gap: 24 }}>
-          {/* Header: Greeting & Profile (Matching HomeScreen / LibraryScreen) */}
+          {/* Header */}
           <View style={[styles.header, { width: screenWidth - 32, marginHorizontal: 16 }]}>
             <RNText style={[styles.headerTitle, { color: colors.text }]}>Settings</RNText>
             <View style={{ flex: 1 }} />
@@ -66,13 +168,22 @@ export default function SettingsScreen() {
                 pressed && styles.pressed
               ]}
             >
-              <AppIcon
-                ios="person.crop.circle.fill"
-                android="person-circle"
-                size={28}
-                color={colors.accent}
-              />
+              <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
             </Pressable>
+          </View>
+
+          {/* 🌟 NAYA SECTION: Account & Integrations */}
+          <View style={{ gap: 12, paddingHorizontal: 16 }}>
+            <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account & Integrations</RNText>
+            <View style={{ gap: 8 }}>
+              <SettingRow
+                iosIcon="play.rectangle.fill"
+                androidIcon="logo-youtube"
+                title="YouTube Music"
+                value={isYTConnected ? "Connected" : "Not Connected"}
+                onPress={handlePressYT}
+              />
+            </View>
           </View>
 
           {/* Section 1: General */}
@@ -92,6 +203,13 @@ export default function SettingsScreen() {
                 title="Dynamic Theme"
                 value="Follow System"
                 onPress={() => alert('Change Theme Options')}
+              />
+              <SettingToggleRow
+                iosIcon="square.grid.3x3.fill"
+                androidIcon="grid"
+                title="Show Speed Dial"
+                value={showSpeedDial}
+                onValueChange={handleToggleSpeedDial}
               />
             </View>
           </View>
@@ -131,13 +249,18 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Bottom padding spacer to clear floating mini player */}
           <View style={{ height: 96 }} />
         </View>
       </ScrollView>
 
-      {/* Unified Mini Player */}
       <MiniPlayer />
+
+      {/* 🌟 Auth Modal Mount */}
+      <YTAuthModal
+        isVisible={isAuthModalVisible}
+        onClose={() => setIsAuthModalVisible(false)}
+        onSuccess={() => setIsYTConnected(true)}
+      />
     </View>
   );
 }

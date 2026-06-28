@@ -29,7 +29,8 @@ export default function CollectionScreen() {
     const { type } = useLocalSearchParams<{ type: string }>();
     const isLiked = type === 'liked';
 
-    const { playTrack, favoriteTracks } = usePlaybackStore();
+    const playTrack = usePlaybackStore((state) => state.playTrack);
+    const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
 
     const [tracks, setTracks] = useState<Track[]>([]);
     const [isLoading, setIsLoading] = useState(true);

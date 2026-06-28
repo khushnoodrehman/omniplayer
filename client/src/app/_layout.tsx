@@ -42,6 +42,8 @@ export default function TabLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="collection" />
+        <Stack.Screen name="playlist" />
+        <Stack.Screen name="artist" />
       </Stack>
       <NowPlayingModal />
     </ThemeProvider>

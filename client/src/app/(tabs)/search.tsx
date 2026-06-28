@@ -171,7 +171,9 @@ const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isLiked, o
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
-  const { playTrack, toggleFavorite, favoriteTracks } = usePlaybackStore();
+  const playTrack = usePlaybackStore((state) => state.playTrack);
+  const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
+  const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
 
   // UI States
   const [searchText, setSearchText] = useState('');

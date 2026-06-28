@@ -1,86 +1,81 @@
 import * as SQLite from 'expo-sqlite';
 import { Track } from '@/store/usePlaybackStore';
 
-// 🌟 THE FIX: Database ka naam v2 kar diya taake fresh schema apply ho
-const db = SQLite.openDatabaseSync('omniplayer_v2.db');
+// 🌟 THE FIX: Database ka naam v3 kar diya taake fresh schema apply ho
+const db = SQLite.openDatabaseSync('omniplayer_v3.db');
+
+// Schema initialization synchronously to prevent race conditions before UI query
+try {
+  db.execSync(`
+    PRAGMA journal_mode = WAL;
+    
+    CREATE TABLE IF NOT EXISTS favorites (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      artist TEXT,
+      image TEXT,
+      duration INTEGER,
+      sourceType TEXT,
+      uri TEXT 
+    );
+
+    CREATE TABLE IF NOT EXISTS downloads (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      artist TEXT,
+      image TEXT,
+      duration INTEGER,
+      localPath TEXT,
+      fileSize TEXT,
+      lyrics TEXT,
+      lyricsType TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS history (
+      id TEXT PRIMARY KEY,
+      title TEXT,
+      artist TEXT,
+      image TEXT,
+      duration INTEGER,
+      sourceType TEXT,
+      uri TEXT,
+      playedAt INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS playlists (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      image TEXT,
+      createdAt INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS playlist_tracks (
+      playlistId TEXT,
+      trackId TEXT,
+      title TEXT,
+      artist TEXT,
+      image TEXT,
+      duration INTEGER,
+      sourceType TEXT,
+      uri TEXT,
+      addedAt INTEGER,
+      PRIMARY KEY (playlistId, trackId)
+    );
+
+    CREATE TABLE IF NOT EXISTS recent_searches (
+      id TEXT PRIMARY KEY,
+      searchQuery TEXT UNIQUE,
+      searchedAt INTEGER
+    );
+  `);
+  console.log('✅ SQLite Schema Initialized Synchronously!');
+} catch (error) {
+  console.error('❌ Synchronous Schema Initialization error:', error);
+}
 
 export const initDB = async () => {
-  try {
-    await db.execAsync(`
-      PRAGMA journal_mode = WAL;
-      
-      /* 🌟 ADDED 'uri' COLUMN TO ALL TRACK TABLES */
-
-      CREATE TABLE IF NOT EXISTS favorites (
-        id TEXT PRIMARY KEY,
-        title TEXT,
-        artist TEXT,
-        image TEXT,
-        duration INTEGER,
-        sourceType TEXT,
-        uri TEXT 
-      );
-
-      CREATE TABLE IF NOT EXISTS downloads (
-        id TEXT PRIMARY KEY,
-        title TEXT,
-        artist TEXT,
-        image TEXT,
-        duration INTEGER,
-        localPath TEXT,
-        fileSize TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS history (
-        id TEXT PRIMARY KEY,
-        title TEXT,
-        artist TEXT,
-        image TEXT,
-        duration INTEGER,
-        sourceType TEXT,
-        uri TEXT,
-        playedAt INTEGER
-      );
-
-      CREATE TABLE IF NOT EXISTS playlists (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        image TEXT,
-        createdAt INTEGER
-      );
-
-      CREATE TABLE IF NOT EXISTS playlist_tracks (
-        playlistId TEXT,
-        trackId TEXT,
-        title TEXT,
-        artist TEXT,
-        image TEXT,
-        duration INTEGER,
-        sourceType TEXT,
-        uri TEXT,
-        addedAt INTEGER,
-        PRIMARY KEY (playlistId, trackId)
-      );
-
-      CREATE TABLE IF NOT EXISTS recent_searches (
-        id TEXT PRIMARY KEY,
-        searchQuery TEXT UNIQUE,
-        searchedAt INTEGER
-      );
-    `);
-    
-    // Alter table if columns don't exist (Migration for lyrics)
-    try {
-      await db.execAsync('ALTER TABLE downloads ADD COLUMN lyrics TEXT;');
-    } catch (e) { /* Column already exists */ }
-    try {
-      await db.execAsync('ALTER TABLE downloads ADD COLUMN lyricsType TEXT;');
-    } catch (e) { /* Column already exists */ }
-
-    console.log('✅ SQLite Database v2 Initialized with URI and Lyrics support!');
-  } catch (error) {
-    console.error('❌ Database initialization error:', error);
-  }
+  // Kept for backward compatibility with _layout.tsx
+  return Promise.resolve();
 };
 
 // ==========================================
