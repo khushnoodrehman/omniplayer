@@ -4,13 +4,16 @@ import { Image } from 'expo-image';
 import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { useIsPlaying, useProgress } from '@rntp/player';
 
 const { width: screenWidth } = Dimensions.get('window');
 const miniPlayerWidth = screenWidth - 32;
 
 export default function MiniPlayer() {
   const colors = useTheme();
-  const { currentTrack, isPlaying, position, duration, togglePlay, setPlayerVisible } = usePlaybackStore();
+  const { currentTrack, togglePlay, setPlayerVisible, playNext, playPrevious } = usePlaybackStore();
+  const isPlaying = useIsPlaying();
+  const { position, duration } = useProgress(0.5);
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
@@ -58,20 +61,52 @@ export default function MiniPlayer() {
           </RNText>
         </View>
 
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            togglePlay();
-          }}
-          style={({ pressed }) => [styles.miniPlayerPlayButton, pressed && styles.pressed]}
-        >
-          <AppIcon
-            ios={isPlaying ? 'pause.fill' : 'play.fill'}
-            android={isPlaying ? 'pause' : 'play'}
-            size={26}
-            color={colors.text}
-          />
-        </Pressable>
+        <View style={styles.controlsRow}>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              playPrevious();
+            }}
+            style={({ pressed }) => [styles.miniPlayerControlButton, pressed && styles.pressed]}
+          >
+            <AppIcon
+              ios="backward.fill"
+              android="play-skip-back"
+              size={20}
+              color={colors.text}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              togglePlay();
+            }}
+            style={({ pressed }) => [styles.miniPlayerPlayButton, pressed && styles.pressed]}
+          >
+            <AppIcon
+              ios={isPlaying ? 'pause.fill' : 'play.fill'}
+              android={isPlaying ? 'pause' : 'play'}
+              size={26}
+              color={colors.text}
+            />
+          </Pressable>
+
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              playNext();
+            }}
+            style={({ pressed }) => [styles.miniPlayerControlButton, pressed && styles.pressed]}
+          >
+            <AppIcon
+              ios="forward.fill"
+              android="play-skip-forward"
+              size={20}
+              color={colors.text}
+            />
+          </Pressable>
+        </View>
       </View>
 
       {/* Progress Bar */}
@@ -142,6 +177,18 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  miniPlayerControlButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   pressed: {
     opacity: 0.7,

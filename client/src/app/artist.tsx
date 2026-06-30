@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
 
 const { width: screenWidth } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.43.179:5000';
+const BACKEND_URL = 'http://192.168.137.141:5000';
 
 const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -111,11 +111,11 @@ export default function ArtistScreen() {
                 {/* Banner / Cover Image */}
                 <View style={styles.bannerContainer}>
                     <Image source={{ uri: artist.image }} style={styles.bannerImage} contentFit="cover" />
-                    <LinearGradient 
-                        colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)', colors.background]} 
-                        style={StyleSheet.absoluteFill} 
+                    <LinearGradient
+                        colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)', colors.background]}
+                        style={StyleSheet.absoluteFill}
                     />
-                    
+
                     <View style={styles.bannerContent}>
                         <RNText style={styles.artistName} numberOfLines={2}>{artist.name}</RNText>
                         {statsText ? <RNText style={styles.artistStats}>{statsText}</RNText> : null}
@@ -124,28 +124,28 @@ export default function ArtistScreen() {
 
                 {/* Main Action Buttons */}
                 <View style={styles.actionRow}>
-                    <Pressable 
+                    <Pressable
                         onPress={() => setIsSubscribed(!isSubscribed)}
                         style={({ pressed }) => [
-                            styles.actionBtn, 
+                            styles.actionBtn,
                             { backgroundColor: isSubscribed ? colors.backgroundSelected : colors.backgroundElement, borderColor: colors.cardBorder },
                             pressed && styles.pressed
                         ]}
                     >
-                        <AppIcon 
-                            ios={isSubscribed ? "checkmark" : "plus"} 
-                            android={isSubscribed ? "checkmark" : "add"} 
-                            size={16} 
-                            color={isSubscribed ? colors.accent : colors.text} 
+                        <AppIcon
+                            ios={isSubscribed ? "checkmark" : "plus"}
+                            android={isSubscribed ? "checkmark" : "add"}
+                            size={16}
+                            color={isSubscribed ? colors.accent : colors.text}
                         />
                         <RNText style={[styles.actionBtnText, { color: isSubscribed ? colors.accent : colors.text }]}>
                             {isSubscribed ? "Subscribed" : "Subscribe"}
                         </RNText>
                     </Pressable>
 
-                    <Pressable 
+                    <Pressable
                         style={({ pressed }) => [
-                            styles.actionBtn, 
+                            styles.actionBtn,
                             { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
                             pressed && styles.pressed
                         ]}
@@ -154,10 +154,10 @@ export default function ArtistScreen() {
                         <RNText style={[styles.actionBtnText, { color: colors.text }]}>Radio</RNText>
                     </Pressable>
 
-                    <Pressable 
+                    <Pressable
                         onPress={handleShufflePlay}
                         style={({ pressed }) => [
-                            styles.actionBtn, 
+                            styles.actionBtn,
                             { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
                             pressed && styles.pressed
                         ]}
@@ -173,11 +173,11 @@ export default function ArtistScreen() {
                         <RNText style={[styles.sectionTitle, { color: colors.text }]}>Top songs</RNText>
                         <View style={styles.songsList}>
                             {artist.topSongs.map((track: any, index: number) => (
-                                <Pressable 
+                                <Pressable
                                     key={`${track.id}-${index}`}
                                     onPress={() => handlePlaySong(track, artist.topSongs)}
                                     style={({ pressed }) => [
-                                        styles.songRow, 
+                                        styles.songRow,
                                         { backgroundColor: colors.backgroundElement },
                                         pressed && { opacity: 0.8 }
                                     ]}
@@ -217,7 +217,7 @@ export default function ArtistScreen() {
                         <RNText style={[styles.sectionTitle, { color: colors.text }]}>Singles & EPs</RNText>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScrollContent}>
                             {[...(artist.albums || []), ...(artist.singles || [])].map((item: any, index: number) => (
-                                <Pressable 
+                                <Pressable
                                     key={`${item.id}-${index}`}
                                     onPress={() => router.push(`/playlist?id=${item.id}`)}
                                     style={[styles.albumCard, { gap: 8 }]}
@@ -241,7 +241,7 @@ export default function ArtistScreen() {
                         <RNText style={[styles.sectionTitle, { color: colors.text }]}>Videos</RNText>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScrollContent}>
                             {artist.videos.map((item: any, index: number) => (
-                                <Pressable 
+                                <Pressable
                                     key={`${item.id}-${index}`}
                                     onPress={() => handlePlaySong(item, artist.videos)}
                                     style={[styles.videoCard, { gap: 8 }]}
@@ -268,7 +268,7 @@ export default function ArtistScreen() {
                         <RNText style={[styles.sectionTitle, { color: colors.text }]}>Playlists by {artist.name}</RNText>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScrollContent}>
                             {artist.playlists.map((item: any, index: number) => (
-                                <Pressable 
+                                <Pressable
                                     key={`${item.id}-${index}`}
                                     onPress={() => router.push(`/playlist?id=${item.id}`)}
                                     style={[styles.albumCard, { gap: 8 }]}
@@ -289,7 +289,7 @@ export default function ArtistScreen() {
                         <RNText style={[styles.sectionTitle, { color: colors.text }]}>Fans might also like</RNText>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScrollContent}>
                             {artist.related.map((item: any, index: number) => (
-                                <Pressable 
+                                <Pressable
                                     key={`${item.id}-${index}`}
                                     onPress={() => router.push(`/artist?id=${item.id}`)}
                                     style={[styles.relatedCard, { gap: 8 }]}

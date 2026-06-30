@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
 
 const { width: screenWidth } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.43.179:5000';
+const BACKEND_URL = 'http://192.168.137.141:5000';
 
 const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -127,27 +127,27 @@ export default function PlaylistScreen() {
 
                 {/* Action Buttons Row */}
                 <View style={styles.actionRow}>
-                    <Pressable 
+                    <Pressable
                         onPress={() => setIsSaved(!isSaved)}
                         style={({ pressed }) => [
-                            styles.actionBtnCircle, 
-                            { backgroundColor: colors.backgroundElement }, 
+                            styles.actionBtnCircle,
+                            { backgroundColor: colors.backgroundElement },
                             pressed && styles.pressed
                         ]}
                     >
-                        <AppIcon 
-                            ios={isSaved ? "heart.fill" : "heart"} 
-                            android={isSaved ? "heart" : "heart-outline"} 
-                            size={20} 
-                            color={isSaved ? colors.accent : colors.text} 
+                        <AppIcon
+                            ios={isSaved ? "heart.fill" : "heart"}
+                            android={isSaved ? "heart" : "heart-outline"}
+                            size={20}
+                            color={isSaved ? colors.accent : colors.text}
                         />
                     </Pressable>
 
-                    <Pressable 
-                        onPress={handlePlayAll} 
+                    <Pressable
+                        onPress={handlePlayAll}
                         style={({ pressed }) => [
-                            styles.playBtn, 
-                            { backgroundColor: colors.accent }, 
+                            styles.playBtn,
+                            { backgroundColor: colors.accent },
                             pressed && styles.pressed
                         ]}
                     >
@@ -155,41 +155,41 @@ export default function PlaylistScreen() {
                         <RNText style={styles.playBtnText}>Play</RNText>
                     </Pressable>
 
-                    <Pressable 
+                    <Pressable
                         style={({ pressed }) => [
-                            styles.actionBtnCircle, 
-                            { backgroundColor: colors.backgroundElement }, 
+                            styles.actionBtnCircle,
+                            { backgroundColor: colors.backgroundElement },
                             pressed && styles.pressed
                         ]}
                     >
                         <AppIcon ios="square.and.arrow.up" android="share-social-outline" size={20} color={colors.text} />
                     </Pressable>
 
-                    <Pressable 
+                    <Pressable
                         style={({ pressed }) => [
-                            styles.actionBtnCircle, 
-                            { backgroundColor: colors.backgroundElement }, 
+                            styles.actionBtnCircle,
+                            { backgroundColor: colors.backgroundElement },
                             pressed && styles.pressed
                         ]}
                     >
                         <AppIcon ios="arrow.down.circle" android="download-outline" size={20} color={colors.text} />
                     </Pressable>
 
-                    <Pressable 
+                    <Pressable
                         onPress={handleShufflePlay}
                         style={({ pressed }) => [
-                            styles.actionBtnCircle, 
-                            { backgroundColor: colors.backgroundElement }, 
+                            styles.actionBtnCircle,
+                            { backgroundColor: colors.backgroundElement },
                             pressed && styles.pressed
                         ]}
                     >
                         <AppIcon ios="shuffle" android="shuffle" size={20} color={colors.text} />
                     </Pressable>
 
-                    <Pressable 
+                    <Pressable
                         style={({ pressed }) => [
-                            styles.actionBtnCircle, 
-                            { backgroundColor: colors.backgroundElement }, 
+                            styles.actionBtnCircle,
+                            { backgroundColor: colors.backgroundElement },
                             pressed && styles.pressed
                         ]}
                     >
@@ -235,7 +235,7 @@ export default function PlaylistScreen() {
                                 {formatDuration(track.duration)}
                             </RNText>
 
-                            <Pressable 
+                            <Pressable
                                 onPress={() => handleTrackOptions(track)}
                                 style={styles.trackMoreButton}
                             >

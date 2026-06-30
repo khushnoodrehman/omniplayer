@@ -13,7 +13,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 const { width: screenWidth } = Dimensions.get('window');
 
 // ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://192.168.43.179:5000';
+const BACKEND_URL = 'http://192.168.137.141:5000';
 
 interface HomeShelfItem {
   id: string;
@@ -389,7 +389,7 @@ export default function HomeScreen() {
                 {/* ── SECTION C: Other shelves ── */}
                 {otherShelves.map((shelf, shelfIdx) => {
                   if (!shelf || !shelf.items || shelf.items.length === 0) return null;
-                  
+
                   const titleLower = (shelf.title || '').toLowerCase();
                   const isKeepListening = titleLower.includes('keep listening');
                   const isMoods = titleLower.includes('moods') || titleLower.includes('genre');

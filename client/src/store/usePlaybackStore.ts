@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import { createAudioPlayer, AudioPlayer, setAudioModeAsync } from 'expo-audio';
+import TrackPlayer from '@rntp/player';
+import { setupPlayer } from '@/services/playbackService';
 // 🌟 DATABASE IMPORTS ADD KIYE HAIN
 import { addFavoriteDB, removeFavoriteDB, getFavoritesDB, addToHistoryDB, getHistoryDB, getDownloadDB } from '@/services/db';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const BACKEND_URL = 'http://192.168.43.179:5000';
+const BACKEND_URL = 'http://192.168.137.141:5000';
 
 export interface Track {
     id: string;
@@ -55,8 +56,6 @@ interface PlaybackState {
     fetchLyricsForTrack: (track: Track) => Promise<void>;
 }
 
-let playerInstance: AudioPlayer | null = null;
-let statusSubscription: any = null;
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     currentTrack: null,
@@ -177,16 +176,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
     playTrack: async (track: Track, newQueue?: Track[]) => {
         try {
-            if (playerInstance) {
-                playerInstance.pause();
-                if (statusSubscription) {
-                    statusSubscription.remove();
-                    statusSubscription = null;
-                }
-                if (typeof playerInstance.release === 'function') {
-                    playerInstance.release();
-                }
-                playerInstance = null;
+            await setupPlayer();
+            
+            // Silence any running background audio immediately
+            try {
+                await TrackPlayer.pause();
+            } catch (pauseErr) {
+                // Ignore if player is not yet active
             }
 
             const currentQueue = newQueue || get().queue;
@@ -249,32 +245,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 return;
             }
 
-            await setAudioModeAsync({
-                playsInSilentMode: true,
-                shouldPlayInBackground: true,
+            const activeIndex = index !== -1 ? index : 0;
+            const mediaItems = currentQueue.map((t, idx) => {
+                const mediaDuration = (t.duration && t.duration > 0) ? t.duration : undefined;
+                return {
+                    mediaId: t.id,
+                    url: idx === activeIndex ? streamUrl! : 'http://placeholder.mp3',
+                    title: t.title,
+                    artist: t.artist,
+                    artworkUrl: t.image,
+                    duration: mediaDuration,
+                };
             });
 
-            playerInstance = createAudioPlayer(streamUrl, {
-                updateInterval: 1000 // Flood prevention: update state once per second
-            });
-
-            statusSubscription = playerInstance.addListener('playbackStatusUpdate', (status) => {
-                const curTime = status.currentTime !== undefined ? status.currentTime : 0;
-                const dur = status.duration !== undefined ? status.duration : (track.duration || 0);
-                const playingState = status.playbackState === 'playing' || !!status.playing;
-
-                set({
-                    position: Math.floor(curTime),
-                    duration: Math.floor(dur),
-                    isPlaying: playingState,
-                });
-
-                if (status.playbackState === 'ended' || status.didJustFinish) {
-                    get().playNext();
-                }
-            });
-
-            playerInstance.play();
+            TrackPlayer.setMediaItems(mediaItems, activeIndex);
+            TrackPlayer.play();
 
         } catch (error) {
             console.error("Audio play error:", error);
@@ -291,6 +276,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             if (isRepeat) {
                 nextIndex = 0;
             } else {
+                await TrackPlayer.stop();
                 set({ isPlaying: false, position: 0 });
                 return;
             }
@@ -301,14 +287,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     playPrevious: async () => {
-        const { queue, currentIndex, position } = get();
+        const { queue, currentIndex } = get();
         if (queue.length === 0) return;
-
-        if (position > 3 && playerInstance) {
-            await playerInstance.seekTo(0);
-            set({ position: 0 });
-            return;
-        }
 
         let prevIndex = currentIndex - 1;
         if (prevIndex < 0) {
@@ -320,22 +300,25 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     togglePlay: async () => {
-        const { isPlaying } = get();
-        if (playerInstance) {
-            if (isPlaying) {
-                playerInstance.pause();
+        try {
+            if (TrackPlayer.isPlaying()) {
+                TrackPlayer.pause();
                 set({ isPlaying: false });
             } else {
-                playerInstance.play();
+                TrackPlayer.play();
                 set({ isPlaying: true });
             }
+        } catch (error) {
+            console.error("Toggle play error:", error);
         }
     },
 
     seek: async (positionSeconds: number) => {
-        if (playerInstance) {
-            await playerInstance.seekTo(positionSeconds);
+        try {
+            TrackPlayer.seekTo(positionSeconds);
             set({ position: positionSeconds });
+        } catch (error) {
+            console.error("Seek error:", error);
         }
     },
 

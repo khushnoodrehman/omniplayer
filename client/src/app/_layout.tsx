@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import { useColorScheme } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import TrackPlayer from '@rntp/player';
 
 import { Colors } from '@/constants/theme';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -9,6 +10,8 @@ import NowPlayingModal from '@/components/now-playing-modal';
 
 import { initDB } from '@/services/db';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { setupPlayer, playbackService, backgroundPlaybackService } from '@/services/playbackService';
+TrackPlayer.registerBackgroundEventHandler(() => backgroundPlaybackService);
 
 export default function TabLayout() {
   const loadStoreData = usePlaybackStore((state) => state.loadStoreData);
@@ -19,6 +22,12 @@ export default function TabLayout() {
     const init = async () => {
       await initDB();
       await loadStoreData();
+      try {
+        await setupPlayer();
+        playbackService();
+      } catch (err) {
+        console.error("Failed to setup player in _layout:", err);
+      }
     };
     init();
   }, []);

@@ -21,6 +21,8 @@ import LyricsView from '@/components/lyrics-view';
 import { downloadTrackFile } from '@/services/downloader';
 import { addDownloadDB } from '@/services/db';
 
+import { useIsPlaying, useProgress } from '@rntp/player';
+
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const SURFACE_CONTAINER_HIGH = '#292a2d';
@@ -44,13 +46,10 @@ export default function NowPlayingModal() {
   const {
     currentTrack,
     favoriteTracks,
-    duration,
-    position,
     seek,
     isPlayerVisible,
     setPlayerVisible,
     toggleFavorite,
-    isPlaying,
     togglePlay,
     isShuffle,
     toggleShuffle,
@@ -60,12 +59,16 @@ export default function NowPlayingModal() {
     playPrevious
   } = usePlaybackStore();
 
+  const isPlaying = useIsPlaying();
+  const { position, duration } = useProgress(0.5);
+
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'lyrics' | 'queue'>('lyrics');
 
   // 🌟 NAYI STATES: Download Status aur Progress ke liye
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [seekBarWidth, setSeekBarWidth] = useState(screenWidth - 32);
 
   if (!currentTrack) return null;
 
@@ -74,8 +77,7 @@ export default function NowPlayingModal() {
 
   const handleSeekBarPress = (e: any) => {
     const { locationX } = e.nativeEvent;
-    const barWidth = screenWidth - 32;
-    const clickRatio = Math.max(0, Math.min(locationX / barWidth, 1));
+    const clickRatio = Math.max(0, Math.min(locationX / seekBarWidth, 1));
     seek(clickRatio * duration);
   };
 
@@ -286,8 +288,12 @@ export default function NowPlayingModal() {
             </View>
 
             <View style={styles.controlsSection}>
-              <Pressable onPress={handleSeekBarPress} style={styles.seekbarContainer}>
-                <View style={[styles.seekbarBg, { backgroundColor: 'rgba(204,195,211,0.20)' }]}>
+              <Pressable
+                onPress={handleSeekBarPress}
+                onLayout={(e) => setSeekBarWidth(e.nativeEvent.layout.width)}
+                style={styles.seekbarContainer}
+              >
+                <View style={[styles.seekbarBg, { backgroundColor: 'rgba(204,195,211,0.20)' }]} pointerEvents="none">
                   <View
                     style={[
                       styles.seekbarFill,

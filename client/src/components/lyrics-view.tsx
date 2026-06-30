@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { useProgress } from '@rntp/player';
 
 export default function LyricsView() {
     const colors = useTheme();
 
-    // Directly store se sab kuch le lo
-    const position = usePlaybackStore((state) => state.position);
+    const { position } = useProgress(0.1);
     const lyrics = usePlaybackStore((state) => state.currentLyrics);
     const loading = usePlaybackStore((state) => state.isLyricsLoading);
     const error = usePlaybackStore((state) => state.lyricsError);
