@@ -3,6 +3,8 @@ from flask_cors import CORS
 from ytmusicapi import YTMusic
 import yt_dlp 
 import requests
+import urllib3.util.connection
+urllib3.util.connection.HAS_IPV6 = False
 import concurrent.futures
 import threading
 import time
@@ -126,22 +128,32 @@ def get_stream_url():
         'cookiefile': 'cookies.txt',
         'quiet': True,
         'noplaylist': True,
-        'js_runtimes': {'node': {}},
-        'remote_components': ['ejs:github'],
+        'check_formats': False,
+        'youtube_include_dash_manifest': False,
+        'youtube_include_hls_manifest': False,
+        'force_ipv4': True,
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept-Language': 'en-US,en;q=0.9',
         },
     }
 
+    import time
+    start_time = time.time()
     try:
+        t0 = time.time()
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            t1 = time.time()
+            print(f"[Stream API] yt_dlp.YoutubeDL init took: {t1 - t0:.4f} seconds")
             info = ydl.extract_info(youtube_url, download=False)
+            t2 = time.time()
+            print(f"[Stream API] extract_info took: {t2 - t1:.4f} seconds")
             stream_url = info.get('url')
             
             if not stream_url:
                 return jsonify({"error": "Stream URL extract nahi ho saki"}), 404
 
+            print(f"[Stream API] Total request handling took: {time.time() - start_time:.4f} seconds")
             return jsonify({
                 "id": video_id,
                 "stream_url": stream_url,
@@ -149,6 +161,7 @@ def get_stream_url():
             })
 
     except Exception as e:
+        print(f"[Stream API] Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 

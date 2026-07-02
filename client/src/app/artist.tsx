@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
 
 const { width: screenWidth } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.137.141:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

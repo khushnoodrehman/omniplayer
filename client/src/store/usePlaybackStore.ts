@@ -5,7 +5,7 @@ import { setupPlayer } from '@/services/playbackService';
 import { addFavoriteDB, removeFavoriteDB, getFavoritesDB, addToHistoryDB, getHistoryDB, getDownloadDB } from '@/services/db';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const BACKEND_URL = 'http://192.168.137.141:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 export interface Track {
     id: string;
@@ -42,6 +42,7 @@ interface PlaybackState {
     currentLyrics: ParsedLyric[];
     isLyricsLoading: boolean;
     lyricsError: string | null;
+    loadedLyricsTrackId: string | null;
 
     playTrack: (track: Track, newQueue?: Track[]) => Promise<void>;
     playNext: () => Promise<void>;
@@ -54,8 +55,10 @@ interface PlaybackState {
     toggleRepeat: () => void;
     loadStoreData: () => Promise<void>;
     fetchLyricsForTrack: (track: Track) => Promise<void>;
+    resolveTrackUri: (track: Track) => Promise<string | undefined>;
 }
 
+const pendingResolutions = new Map<string, Promise<string | undefined>>();
 
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     currentTrack: null,
@@ -74,6 +77,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     currentLyrics: [],
     isLyricsLoading: false,
     lyricsError: null,
+    loadedLyricsTrackId: null,
 
     loadStoreData: async () => {
         try {
@@ -89,7 +93,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     fetchLyricsForTrack: async (track: Track) => {
-        set({ isLyricsLoading: true, lyricsError: null, currentLyrics: [] });
+        if (get().loadedLyricsTrackId === track.id) {
+            console.log(`[PlaybackStore] Lyrics already loaded for: ${track.title}`);
+            return;
+        }
+        set({ isLyricsLoading: true, lyricsError: null, currentLyrics: [], loadedLyricsTrackId: null });
         try {
             // Check downloads database for offline cached lyrics
             try {
@@ -111,9 +119,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                             });
                             return parsed;
                         };
-                        set({ currentLyrics: parseLRC(download.lyrics), isLyricsLoading: false });
+                        set({ currentLyrics: parseLRC(download.lyrics), isLyricsLoading: false, loadedLyricsTrackId: track.id });
                     } else {
-                        set({ currentLyrics: [{ time: 0, text: download.lyrics }], isLyricsLoading: false });
+                        set({ currentLyrics: [{ time: 0, text: download.lyrics }], isLyricsLoading: false, loadedLyricsTrackId: track.id });
                     }
                     return;
                 }
@@ -161,14 +169,14 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     });
                     return parsed;
                 };
-                set({ currentLyrics: parseLRC(data.lyrics) });
+                set({ currentLyrics: parseLRC(data.lyrics), loadedLyricsTrackId: track.id });
             } else if (data.type === 'static') {
-                set({ currentLyrics: [{ time: 0, text: data.lyrics }] });
+                set({ currentLyrics: [{ time: 0, text: data.lyrics }], loadedLyricsTrackId: track.id });
             } else {
-                set({ lyricsError: 'Lyrics not available' });
+                set({ lyricsError: 'Lyrics not available', loadedLyricsTrackId: track.id });
             }
         } catch (err) {
-            set({ lyricsError: 'Failed to load lyrics' });
+            set({ lyricsError: 'Failed to load lyrics', loadedLyricsTrackId: null });
         } finally {
             set({ isLyricsLoading: false });
         }
@@ -177,27 +185,36 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     playTrack: async (track: Track, newQueue?: Track[]) => {
         try {
             await setupPlayer();
-            
-            // Silence any running background audio immediately
+
+            // If same track is already playing/paused, just seek to 0 and resume play
+            const store = get();
+            if (store.currentTrack?.id === track.id) {
+                console.log(`[PlaybackStore] Same track selected. Restarting playback.`);
+                await TrackPlayer.seekTo(0);
+                await TrackPlayer.play();
+                return;
+            }
+
             try {
                 await TrackPlayer.pause();
-            } catch (pauseErr) {
-                // Ignore if player is not yet active
-            }
+            } catch (err) {}
 
             const currentQueue = newQueue || get().queue;
             const index = currentQueue.findIndex(t => t.id === track.id);
+            const activeIndex = index !== -1 ? index : 0;
 
+            // 1. Update local Zustand state first
             set({
                 currentTrack: track,
                 queue: currentQueue,
-                currentIndex: index !== -1 ? index : 0,
+                currentIndex: activeIndex,
                 isPlayerVisible: true,
                 position: 0,
                 duration: track.duration,
                 isPlaying: true
             });
 
+            // Save history and fetch lyrics
             addToHistoryDB(track);
             get().fetchLyricsForTrack(track);
 
@@ -206,51 +223,27 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 return { history: newHistory };
             });
 
-            // Check if track has been downloaded locally
-            let streamUrl: string | undefined = track.sourceType === 'youtube' ? undefined : track.uri;
-
-            if (track.sourceType === 'youtube') {
-                try {
-                    const download = await getDownloadDB(track.id);
-                    if (download && download.localPath) {
-                        const fileInfo = await FileSystem.getInfoAsync(download.localPath);
-                        if (fileInfo.exists) {
-                            streamUrl = download.localPath;
-                            track.uri = streamUrl; // Update session memory
-                            console.log(`[PlaybackStore] Playing local downloaded file: ${streamUrl}`);
-                        } else {
-                            console.warn(`[PlaybackStore] Downloaded file not found at: ${download.localPath}, falling back to stream.`);
-                        }
-                    }
-                } catch (dbErr) {
-                    console.error("[PlaybackStore] Error checking downloads DB:", dbErr);
-                }
-            }
-
-            if (!streamUrl && track.sourceType === 'youtube') {
-                try {
-                    const response = await fetch(`${BACKEND_URL}/api/stream?id=${track.id}`);
-                    const data = await response.json();
-                    if (data.stream_url) {
-                        streamUrl = data.stream_url;
-                        track.uri = streamUrl; // Update session memory
-                    }
-                } catch (err) {
-                    console.error("Store stream fetch error:", err);
-                }
-            }
-
-            if (!streamUrl) {
-                console.warn("Track URI missing hai! Gaana play nahi ho sakta.");
+            // 2. Resolve URL (resolves instantly for local/offline/cached, takes ~1s for new online streams)
+            const startTime = Date.now();
+            const resolvedCurrentUrl = await get().resolveTrackUri(track);
+            console.log(`[PlaybackStore] resolveTrackUri for "${track.title}" took ${Date.now() - startTime}ms`);
+            if (!resolvedCurrentUrl) {
+                console.warn("Could not resolve current track URL.");
                 return;
             }
 
-            const activeIndex = index !== -1 ? index : 0;
+            // 3. Set queue in player immediately with the resolved URL for the active track.
             const mediaItems = currentQueue.map((t, idx) => {
                 const mediaDuration = (t.duration && t.duration > 0) ? t.duration : undefined;
+                
+                // Active track gets the real resolved URL. Neighbors get placeholders or cached URLs.
+                const targetUrl = idx === activeIndex 
+                    ? resolvedCurrentUrl 
+                    : (t.uri && !t.uri.includes('placeholder') ? t.uri : 'http://placeholder.mp3');
+                
                 return {
                     mediaId: t.id,
-                    url: idx === activeIndex ? streamUrl! : 'http://placeholder.mp3',
+                    url: targetUrl,
                     title: t.title,
                     artist: t.artist,
                     artworkUrl: t.image,
@@ -258,8 +251,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 };
             });
 
-            TrackPlayer.setMediaItems(mediaItems, activeIndex);
-            TrackPlayer.play();
+            await TrackPlayer.setMediaItems(mediaItems, activeIndex);
+            await TrackPlayer.play();
 
         } catch (error) {
             console.error("Audio play error:", error);
@@ -271,19 +264,18 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         if (queue.length === 0) return;
 
         let nextIndex = currentIndex + 1;
-
         if (nextIndex >= queue.length) {
             if (isRepeat) {
                 nextIndex = 0;
             } else {
-                await TrackPlayer.stop();
-                set({ isPlaying: false, position: 0 });
                 return;
             }
         }
 
         const nextTrack = queue[nextIndex];
-        if (nextTrack) await get().playTrack(nextTrack, queue);
+        if (nextTrack) {
+            await get().playTrack(nextTrack, queue);
+        }
     },
 
     playPrevious: async () => {
@@ -296,17 +288,17 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         }
 
         const prevTrack = queue[prevIndex];
-        if (prevTrack) await get().playTrack(prevTrack, queue);
+        if (prevTrack) {
+            await get().playTrack(prevTrack, queue);
+        }
     },
 
     togglePlay: async () => {
         try {
-            if (TrackPlayer.isPlaying()) {
-                TrackPlayer.pause();
-                set({ isPlaying: false });
+            if (get().isPlaying) {
+                await TrackPlayer.pause();
             } else {
-                TrackPlayer.play();
-                set({ isPlaying: true });
+                await TrackPlayer.play();
             }
         } catch (error) {
             console.error("Toggle play error:", error);
@@ -315,7 +307,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
     seek: async (positionSeconds: number) => {
         try {
-            TrackPlayer.seekTo(positionSeconds);
+            await TrackPlayer.seekTo(positionSeconds);
             set({ position: positionSeconds });
         } catch (error) {
             console.error("Seek error:", error);
@@ -337,6 +329,88 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         }
     },
 
-    toggleShuffle: () => set((state) => ({ isShuffle: !state.isShuffle })),
-    toggleRepeat: () => set((state) => ({ isRepeat: !state.isRepeat })),
+    toggleShuffle: () => {
+        const nextShuffle = !get().isShuffle;
+        set({ isShuffle: nextShuffle });
+        try {
+            TrackPlayer.setShuffleEnabled(nextShuffle);
+        } catch (err) {
+            console.error('TrackPlayer setShuffleEnabled error:', err);
+        }
+    },
+
+    toggleRepeat: () => {
+        const nextRepeat = !get().isRepeat;
+        set({ isRepeat: nextRepeat });
+        try {
+            const { RepeatMode } = require('@rntp/player');
+            TrackPlayer.setRepeatMode(nextRepeat ? RepeatMode.All : RepeatMode.Off);
+        } catch (err) {
+            console.error('TrackPlayer setRepeatMode error:', err);
+        }
+    },
+
+    resolveTrackUri: async (track: Track) => {
+        // Return existing resolution promise if already running
+        if (pendingResolutions.has(track.id)) {
+            console.log(`[PlaybackStore] Joining existing stream URL resolution promise for ${track.title}`);
+            return pendingResolutions.get(track.id);
+        }
+
+        const promise = (async () => {
+            try {
+                if (track.sourceType === 'youtube' && track.uri && !track.uri.includes('placeholder')) {
+                    console.log(`[PlaybackStore] Using in-memory cached stream URL for ${track.title}`);
+                    return track.uri;
+                }
+
+                // Check if track has been downloaded locally
+                let streamUrl: string | undefined = track.sourceType === 'youtube' ? undefined : track.uri;
+
+                if (track.sourceType === 'youtube') {
+                    try {
+                        const download = await getDownloadDB(track.id);
+                        if (download && download.localPath) {
+                            const fileInfo = await FileSystem.getInfoAsync(download.localPath);
+                            if (fileInfo.exists) {
+                                streamUrl = download.localPath;
+                                track.uri = streamUrl; // Update session memory
+                                console.log(`[PlaybackStore] Using local downloaded file: ${streamUrl}`);
+                                return streamUrl;
+                            } else {
+                                console.warn(`[PlaybackStore] Downloaded file not found at: ${download.localPath}, falling back to stream.`);
+                            }
+                        }
+                    } catch (dbErr) {
+                        console.error("[PlaybackStore] Error checking downloads DB:", dbErr);
+                    }
+                }
+
+                if (!streamUrl && track.sourceType === 'youtube') {
+                    try {
+                        const response = await fetch(`${BACKEND_URL}/api/stream?id=${track.id}`);
+                        const data = await response.json();
+                        if (data.stream_url) {
+                            streamUrl = data.stream_url;
+                            track.uri = streamUrl; // Update session memory
+                            return streamUrl;
+                        }
+                    } catch (err) {
+                        console.error("Store stream fetch error:", err);
+                    }
+                }
+
+                return streamUrl || track.uri;
+            } catch (err) {
+                console.error('[PlaybackStore] resolveTrackUri error:', err);
+                return undefined;
+            } finally {
+                // Clean up lock once promise settles
+                pendingResolutions.delete(track.id);
+            }
+        })();
+
+        pendingResolutions.set(track.id, promise);
+        return promise;
+    },
 }));

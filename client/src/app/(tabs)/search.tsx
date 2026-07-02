@@ -13,7 +13,7 @@ const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
 
 // ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://192.168.137.141:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 // Helper to convert any backend value safely to a string for React Native Text components
 const safeString = (val: any, fallback = ''): string => {

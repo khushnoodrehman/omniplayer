@@ -13,7 +13,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 const { width: screenWidth } = Dimensions.get('window');
 
 // ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://192.168.137.141:5000';
+const BACKEND_URL = 'http://192.168.43.179:5000';
 
 interface HomeShelfItem {
   id: string;

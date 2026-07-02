@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -19,10 +19,8 @@ import { AppIcon } from '@/components/ui/app-icon';
 
 import LyricsView from '@/components/lyrics-view';
 import { downloadTrackFile } from '@/services/downloader';
-import { addDownloadDB } from '@/services/db';
-
-import { useIsPlaying, useProgress } from '@rntp/player';
-
+import { addDownloadDB, getDownloadDB } from '@/services/db';
+import { useIsPlaying, useProgress, useActiveMediaItem } from '@rntp/player';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const SURFACE_CONTAINER_HIGH = '#292a2d';
@@ -60,7 +58,13 @@ export default function NowPlayingModal() {
   } = usePlaybackStore();
 
   const isPlaying = useIsPlaying();
-  const { position, duration } = useProgress(0.5);
+  const activeMediaItem = useActiveMediaItem();
+  const { position: nativePosition, duration: nativeDuration } = useProgress(0.5);
+
+  const isCurrentTrackLoaded = activeMediaItem?.mediaId === currentTrack?.id;
+  const position = isCurrentTrackLoaded ? nativePosition : 0;
+  const duration = isCurrentTrackLoaded ? nativeDuration : (currentTrack?.duration || 0);
+
 
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'lyrics' | 'queue'>('lyrics');
@@ -69,6 +73,27 @@ export default function NowPlayingModal() {
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [seekBarWidth, setSeekBarWidth] = useState(screenWidth - 32);
+
+  useEffect(() => {
+    let active = true;
+    const checkDownloadStatus = async () => {
+      if (!currentTrack) return;
+      try {
+        const download = await getDownloadDB(currentTrack.id);
+        if (download && download.localPath) {
+          if (active) setDownloadStatus('downloaded');
+        } else {
+          if (active) setDownloadStatus('idle');
+        }
+      } catch (err) {
+        console.error("[NowPlayingModal] Error checking download status:", err);
+      }
+    };
+    checkDownloadStatus();
+    return () => {
+      active = false;
+    };
+  }, [currentTrack]);
 
   if (!currentTrack) return null;
 
@@ -114,12 +139,6 @@ export default function NowPlayingModal() {
 
       // Database mein save kiya (including lyrics)
       await addDownloadDB(currentTrack, localUri, '', lyrics, lyricsType);
-
-      // 3 second baad icon wapas normal kardo
-      setTimeout(() => {
-        setDownloadStatus('idle');
-        setDownloadProgress(0);
-      }, 3000);
     } else {
       // Download failed
       setDownloadStatus('idle');
