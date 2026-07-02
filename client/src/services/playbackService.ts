@@ -39,7 +39,7 @@ async function resolveAdjacentTracks(currentIndex: number) {
         const queue = store.queue;
         if (queue.length === 0) return;
 
-        const nativeQueue = TrackPlayer.getQueue();
+        const nativeQueue = await TrackPlayer.getQueue();
 
         // Resolve next track (index + 1)
         const nextIndex = currentIndex + 1;

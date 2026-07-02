@@ -17,6 +17,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { AppIcon } from '@/components/ui/app-icon';
 
+import * as FileSystem from 'expo-file-system/legacy';
 import LyricsView from '@/components/lyrics-view';
 import { downloadTrackFile } from '@/services/downloader';
 import { addDownloadDB, getDownloadDB } from '@/services/db';
@@ -81,10 +82,13 @@ export default function NowPlayingModal() {
       try {
         const download = await getDownloadDB(currentTrack.id);
         if (download && download.localPath) {
-          if (active) setDownloadStatus('downloaded');
-        } else {
-          if (active) setDownloadStatus('idle');
+          const fileInfo = await FileSystem.getInfoAsync(download.localPath);
+          if (fileInfo.exists) {
+            if (active) setDownloadStatus('downloaded');
+            return;
+          }
         }
+        if (active) setDownloadStatus('idle');
       } catch (err) {
         console.error("[NowPlayingModal] Error checking download status:", err);
       }
@@ -137,8 +141,19 @@ export default function NowPlayingModal() {
         console.error("Error fetching lyrics for offline storage:", err);
       }
 
-      // Database mein save kiya (including lyrics)
-      await addDownloadDB(currentTrack, localUri, '', lyrics, lyricsType);
+      // Fetch downloaded file size client-side
+      let fileSize = '';
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(localUri);
+        if (fileInfo.exists) {
+          fileSize = (fileInfo.size / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+      } catch (err) {
+        console.error("Error getting file size for offline storage:", err);
+      }
+
+      // Database mein save kiya (including lyrics & file size)
+      await addDownloadDB(currentTrack, localUri, fileSize, lyrics, lyricsType);
     } else {
       // Download failed
       setDownloadStatus('idle');

@@ -19,14 +19,55 @@ import re
 app = Flask(__name__)
 CORS(app) 
 
+# 🌟 SIMPLE TTL CACHE CLASS
+class SimpleTTLCache:
+    def __init__(self, ttl_seconds=900):
+        self.ttl = ttl_seconds
+        self.cache = {}
+        self._lock = threading.Lock()
+
+    def get(self, key):
+        with self._lock:
+            if key in self.cache:
+                val, timestamp = self.cache[key]
+                if time.time() - timestamp < self.ttl:
+                    return val
+                else:
+                    del self.cache[key]
+            return None
+
+    def set(self, key, value):
+        with self._lock:
+            self.cache[key] = (value, time.time())
+
+# Global cache and session instances
+lrclib_session = requests.Session()
+search_cache = SimpleTTLCache(900)        # 15 min cache for search queries
+guest_home_cache = SimpleTTLCache(1800)   # 30 min cache for guest home data
+ytmusic_instances_cache = {}             # Memory cache for YTMusic auth instances
+ytmusic_cache_lock = threading.Lock()
+
 # 🌟 THE FINAL STATELESS YTMUSIC INITIALIZER
 from ytmusicapi.auth.types import AuthType
 import re
 import time
 import hashlib
 
+guest_ytmusic_instance = None
+guest_ytmusic_timestamp = 0
+
 def get_ytmusic(auth_string=None):
+    global guest_ytmusic_instance, guest_ytmusic_timestamp
+    now = time.time()
+
     if auth_string:
+        cookie_hash = hashlib.md5(auth_string.encode('utf-8')).hexdigest()
+        with ytmusic_cache_lock:
+            if cookie_hash in ytmusic_instances_cache:
+                yt, cache_time = ytmusic_instances_cache[cookie_hash]
+                if now - cache_time < 900:
+                    return yt
+
         cookie_str = auth_string
         print(f"[get_ytmusic] Received cookie string length: {len(cookie_str)}")
         
@@ -74,11 +115,25 @@ def get_ytmusic(auth_string=None):
             yt.auth_type = AuthType.BROWSER 
             
             print(f"[get_ytmusic] Setup successful! Auth forced to BROWSER.")
+            with ytmusic_cache_lock:
+                ytmusic_instances_cache[cookie_hash] = (yt, now)
             return yt
         except Exception as e:
             print(f"Error initializing YTMusic with cookie: {e}")
             
-    return YTMusic()
+    else:
+        with ytmusic_cache_lock:
+            if guest_ytmusic_instance and (now - guest_ytmusic_timestamp < 900):
+                return guest_ytmusic_instance
+        try:
+            yt = YTMusic()
+            with ytmusic_cache_lock:
+                guest_ytmusic_instance = yt
+                guest_ytmusic_timestamp = now
+            return yt
+        except Exception as e:
+            print(f"Error initializing default YTMusic: {e}")
+            return YTMusic()
 
 
 
@@ -94,6 +149,12 @@ def search_music():
         return jsonify({"error": "Search query is required"}), 400
 
     try:
+        # Check cache
+        cached = search_cache.get(query)
+        if cached:
+            print(f"[Search Cache] Hit for query: {query}")
+            return jsonify({"results": cached})
+
         # 🌟 Changed to get_ytmusic()
         search_results = get_ytmusic().search(query, filter="songs", limit=50)
         
@@ -108,6 +169,7 @@ def search_music():
                 "sourceType": "youtube"
             })
 
+        search_cache.set(query, formatted_results)
         return jsonify({"results": formatted_results})
 
     except Exception as e:
@@ -261,6 +323,11 @@ def get_home_data():
                 print(f"Error loading personalized home feed: {e}")
         
         # Guest flow / Old Home Screen data
+        cached_guest_home = guest_home_cache.get('guest_home')
+        if cached_guest_home:
+            print("[Home Cache] Hit for guest home feed")
+            return jsonify(cached_guest_home)
+
         yt = get_ytmusic()
         charts = yt.get_charts()
         
@@ -317,13 +384,15 @@ def get_home_data():
             
         global_hits_results = get_fallback_data("Global Top 50 songs Spotify")
 
-        return jsonify({
+        guest_home_data = {
             "isLoggedIn": False,
             "trending": trending_results,
             "topTracks": top_tracks_results,
             "newReleases": new_releases_results,
             "globalHits": global_hits_results
-        })
+        }
+        guest_home_cache.set('guest_home', guest_home_data)
+        return jsonify(guest_home_data)
 
     except Exception as e:
         print(f"Home API Fatal Error: {str(e)}")
@@ -369,14 +438,14 @@ def get_lyrics():
     try:
         if clean_artist:
             lrc_url = f"https://lrclib.net/api/get?track_name={search_title}&artist_name={clean_artist}"
-            response = requests.get(lrc_url, timeout=15)
+            response = lrclib_session.get(lrc_url, timeout=15)
             if response.status_code == 200:
                 data = response.json()
                 if data.get('syncedLyrics'): return jsonify({"type": "synced", "lyrics": data['syncedLyrics'], "source": "lrclib"})
                 elif data.get('plainLyrics'): return jsonify({"type": "static", "lyrics": data['plainLyrics'], "source": "lrclib"})
         
         search_url = f"https://lrclib.net/api/search?q={search_title} {clean_artist}".strip()
-        search_res = requests.get(search_url, timeout=15)
+        search_res = lrclib_session.get(search_url, timeout=15)
         if search_res.status_code == 200:
             search_data = search_res.json()
             if search_data and isinstance(search_data, list):
@@ -430,7 +499,7 @@ def fetch_lyrics_raw(track_name, artist_name, track_id=None):
     try:
         if clean_artist:
             lrc_url = f"https://lrclib.net/api/get?track_name={urllib.parse.quote(search_title)}&artist_name={urllib.parse.quote(clean_artist)}"
-            response = requests.get(lrc_url, timeout=15)
+            response = lrclib_session.get(lrc_url, timeout=15)
             if response.status_code == 200:
                 data = response.json()
                 return data.get('syncedLyrics') or data.get('plainLyrics')
@@ -476,61 +545,66 @@ def embed_lyrics_in_file(file_path, lyrics_text):
     return False
 
 
-# --- DYNAMIC DOWNLOAD ENGINE ---
+# --- DYNAMIC DOWNLOAD ENGINE (DEPRECATED - MIGRATED TO CLIENT SIDE) ---
 @app.route('/api/download', methods=['GET'])
 def download_track():
-    track_id = request.args.get('id')
-    audio_format = request.args.get('format', 'm4a').lower() 
-    track_title = request.args.get('title')
-    track_artist = request.args.get('artist')
+    return jsonify({
+        "error": "This endpoint is deprecated. Downloads are now handled directly by the client using the stream URL."
+    }), 410
 
-    if not track_id: return jsonify({"error": "Track ID is required"}), 400
-
-    download_dir = 'temp_downloads'
-    if not os.path.exists(download_dir): os.makedirs(download_dir)
-    cleanup_old_files(download_dir)
-
-    ydl_format = 'bestaudio[ext=m4a]/bestaudio/best' if audio_format == 'm4a' else 'bestaudio[ext=webm]/bestaudio/best'
-
-    ydl_opts = {
-        'format': ydl_format,
-        'outtmpl': f'{download_dir}/{track_id}.%(ext)s',
-        'writethumbnail': True,
-        'cookiefile': 'cookies.txt',
-        'js_runtimes': {'node': {}},
-        'remote_components': ['ejs:github'],
-        'postprocessors': [{'key': 'FFmpegMetadata'}, {'key': 'EmbedThumbnail'}],
-        'quiet': True,
-    }
-
-    try:
-        target_url = f"https://www.youtube.com/watch?v={track_id}"
-        lyrics_text = None
-        
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            lyrics_future = executor.submit(fetch_lyrics_raw, track_title, track_artist, track_id) if track_title else None
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([target_url])
-                
-            if lyrics_future:
-                try: lyrics_text = lyrics_future.result(timeout=15)
-                except Exception: pass
-            
-        downloaded_files = glob.glob(f"{download_dir}/{track_id}.*")
-        audio_file = None
-        for file in downloaded_files:
-            if not file.endswith(('.jpg', '.webp', '.png')):
-                audio_file = file
-                break
-                
-        if audio_file:
-            if lyrics_text: embed_lyrics_in_file(audio_file, lyrics_text)
-            response = send_file(audio_file, as_attachment=True, download_name=os.path.basename(audio_file), mimetype=f'audio/{audio_format}')
-            threading.Thread(target=delay_delete, args=(track_id, download_dir)).start()
-            return response
-        return jsonify({"error": "File conversion failed"}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Old Server-Side Downloading logic (Deprecated in Phase 1)
+    # track_id = request.args.get('id')
+    # audio_format = request.args.get('format', 'm4a').lower() 
+    # track_title = request.args.get('title')
+    # track_artist = request.args.get('artist')
+    #
+    # if not track_id: return jsonify({"error": "Track ID is required"}), 400
+    #
+    # download_dir = 'temp_downloads'
+    # if not os.path.exists(download_dir): os.makedirs(download_dir)
+    # threading.Thread(target=cleanup_old_files, args=(download_dir,), daemon=True).start()
+    #
+    # ydl_format = 'bestaudio[ext=m4a]/bestaudio/best' if audio_format == 'm4a' else 'bestaudio[ext=webm]/bestaudio/best'
+    #
+    # ydl_opts = {
+    #     'format': ydl_format,
+    #     'outtmpl': f'{download_dir}/{track_id}.%(ext)s',
+    #     'writethumbnail': True,
+    #     'cookiefile': 'cookies.txt',
+    #     'js_runtimes': {'node': {}},
+    #     'remote_components': ['ejs:github'],
+    #     'postprocessors': [{'key': 'FFmpegMetadata'}, {'key': 'EmbedThumbnail'}],
+    #     'quiet': True,
+    # }
+    #
+    # try:
+    #     target_url = f"https://www.youtube.com/watch?v={track_id}"
+    #     lyrics_text = None
+    #     
+    #     with concurrent.futures.ThreadPoolExecutor() as executor:
+    #         lyrics_future = executor.submit(fetch_lyrics_raw, track_title, track_artist, track_id) if track_title else None
+    #         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    #             ydl.download([target_url])
+    #             
+    #         if lyrics_future:
+    #             try: lyrics_text = lyrics_future.result(timeout=15)
+    #             except Exception: pass
+    #         
+    #     downloaded_files = glob.glob(f"{download_dir}/{track_id}.*")
+    #     audio_file = None
+    #     for file in downloaded_files:
+    #         if not file.endswith(('.jpg', '.webp', '.png')):
+    #             audio_file = file
+    #             break
+    #             
+    #     if audio_file:
+    #         if lyrics_text: embed_lyrics_in_file(audio_file, lyrics_text)
+    #         response = send_file(audio_file, as_attachment=True, download_name=os.path.basename(audio_file), mimetype=f'audio/{audio_format}')
+    #         threading.Thread(target=delay_delete, args=(track_id, download_dir)).start()
+    #         return response
+    #     return jsonify({"error": "File conversion failed"}), 500
+    # except Exception as e:
+    #     return jsonify({"error": str(e)}), 500
 
 
 # ==========================================

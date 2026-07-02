@@ -15,18 +15,38 @@ export const downloadTrackFile = async (
         }
 
         const trackId = track.id;
+        console.log(`[Downloader] Fetching stream URL for track ID: ${trackId}`);
+
+        // 1. Fetch raw stream URL from backend
+        const streamResponse = await fetch(`${BACKEND_URL}/api/stream?id=${trackId}`);
+        if (!streamResponse.ok) {
+            throw new Error(`Failed to fetch stream URL: ${streamResponse.statusText}`);
+        }
+        const streamData = await streamResponse.json();
+        const streamUrl = streamData.stream_url;
+        if (!streamUrl) {
+            throw new Error("No stream URL returned from server");
+        }
+
+        // 2. Determine correct file extension based on mime type in stream URL
+        let extension = format || 'm4a';
+        if (streamUrl.includes('mime=audio/webm') || streamUrl.includes('mime=audio%2Fwebm')) {
+            extension = 'webm';
+        } else if (streamUrl.includes('mime=audio/mp4') || streamUrl.includes('mime=audio%2Fmp4')) {
+            extension = 'm4a';
+        }
+        console.log(`[Downloader] Determined file extension: .${extension}`);
+
+        // 3. Safe file name creation (sanitized and unique via track ID)
+        const safeTitle = track.title.replace(/[^a-zA-Z0-9 ]/g, "").trim() || "Track";
         const cleanArtist = track.artist.split('•')[0].trim();
-        // The API route we created in Flask (skip quality, backend defaults to direct copy)
-        const downloadUrl = `${BACKEND_URL}/api/download?id=${trackId}&format=${format}&title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(cleanArtist)}`;
+        const safeArtist = cleanArtist.replace(/[^a-zA-Z0-9 ]/g, "").trim() || "Artist";
+        const fileName = `${safeTitle} - ${safeArtist} [${trackId}].${extension}`;
 
-        // Safe file name banayenge (special characters hata kar)
-        const safeTitle = track.title.replace(/[^a-zA-Z0-9 ]/g, "").trim();
-        const fileName = `${safeTitle} - ${track.artist}.${format}`;
-
-        // App ka internal document folder jahan files permanently save hongi
+        // App's internal document folder where files are permanently saved
         const downloadDir = FileSystem.documentDirectory + 'OmniPlayer/';
 
-        // Check karenge ke OmniPlayer ka folder pehle se hai ya nahi, nahi toh naya banayenge
+        // Check if directory exists, if not create it
         const dirInfo = await FileSystem.getInfoAsync(downloadDir);
         if (!dirInfo.exists) {
             await FileSystem.makeDirectoryAsync(downloadDir, { intermediates: true });
@@ -37,9 +57,9 @@ export const downloadTrackFile = async (
         console.log(`[Downloader] Starting download for: ${track.title}`);
         console.log(`[Downloader] File will be saved at: ${fileUri}`);
 
-        // Create download resumable for tracking progress
+        // 4. Create download resumable for tracking progress from raw stream URL
         const downloadResumable = FileSystem.createDownloadResumable(
-            downloadUrl,
+            streamUrl,
             fileUri,
             {},
             (downloadProgress) => {
@@ -56,7 +76,7 @@ export const downloadTrackFile = async (
             console.log(`[Downloader] ✅ Success! Saved at:`, downloadRes.uri);
             return downloadRes.uri;
         } else {
-            console.error("[Downloader] ❌ Server returned error status:", downloadRes ? downloadRes.status : 'unknown');
+            console.error("[Downloader] ❌ Download failed with status:", downloadRes ? downloadRes.status : 'unknown');
             return null;
         }
     } catch (error) {

@@ -219,6 +219,29 @@ export const getPlaylistTracksDB = async (playlistId: string): Promise<Track[]> 
   }
 };
 
+export const addPlaylistTrackDB = async (playlistId: string, track: Track, localPath: string) => {
+  try {
+    await db.runAsync(
+      'INSERT OR REPLACE INTO playlist_tracks (playlistId, trackId, title, artist, image, duration, sourceType, uri, addedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [playlistId, track.id, track.title, track.artist, track.image, track.duration, 'local', localPath, Date.now()]
+    );
+  } catch (error) {
+    console.error('Error adding playlist track to DB:', error);
+  }
+};
+
+export const savePlaylistMetadataDB = async (playlistId: string, name: string, image: string) => {
+  try {
+    await db.runAsync(
+      'INSERT OR REPLACE INTO playlists (id, name, image, createdAt) VALUES (?, ?, ?, ?)',
+      [playlistId, name, image, Date.now()]
+    );
+    console.log(`✅ Saved playlist metadata to DB: ${name} (${playlistId})`);
+  } catch (error) {
+    console.error('Error saving playlist metadata to DB:', error);
+  }
+};
+
 // ==========================================
 // 🌟 DOWNLOADS FUNCTIONS
 // ==========================================

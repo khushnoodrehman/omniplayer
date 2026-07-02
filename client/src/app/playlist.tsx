@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
+import { getPlaylistTracksDB, getPlaylistsDB } from '@/services/db';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
 
@@ -25,6 +26,7 @@ export default function PlaylistScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
 
     const playTrack = usePlaybackStore((state) => state.playTrack);
+    const downloadPlaylist = usePlaybackStore((state) => state.downloadPlaylist);
 
     const [playlist, setPlaylist] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -47,14 +49,42 @@ export default function PlaylistScreen() {
                 const data = await response.json();
                 setPlaylist(data);
             } catch (error) {
-                console.error("Error fetching playlist:", error);
-                Alert.alert("Error", "Could not load playlist details.");
+                console.log("[PlaylistScreen] Network error, attempting offline DB fallback for playlist ID:", id);
+                try {
+                    const localTracks = await getPlaylistTracksDB(id);
+                    const allLocalPlaylists = await getPlaylistsDB();
+                    const matchedPlaylist = allLocalPlaylists.find(p => p.id === id);
+                    
+                    if (matchedPlaylist && localTracks && localTracks.length > 0) {
+                        setPlaylist({
+                            id: matchedPlaylist.id,
+                            title: matchedPlaylist.name,
+                            image: matchedPlaylist.image,
+                            songs: localTracks,
+                            trackCount: localTracks.length,
+                            duration: ""
+                        });
+                    } else {
+                        throw new Error("No offline copy found in local DB.");
+                    }
+                } catch (dbErr) {
+                    console.error("Offline fallback failed:", dbErr);
+                    Alert.alert("Offline", "Could not load playlist details. Make sure you are connected to the internet or have downloaded this playlist.");
+                }
             } finally {
                 setIsLoading(false);
             }
         };
         fetchPlaylistDetails();
     }, [id]);
+
+    const handleDownloadPlaylist = () => {
+        if (playlist && playlist.songs && playlist.songs.length > 0) {
+            downloadPlaylist(playlist.id, playlist.title, playlist.image, playlist.songs);
+        } else {
+            Alert.alert("Error", "No tracks available to download.");
+        }
+    };
 
     const handlePlayAll = () => {
         if (playlist && playlist.songs && playlist.songs.length > 0) {
@@ -166,6 +196,7 @@ export default function PlaylistScreen() {
                     </Pressable>
 
                     <Pressable
+                        onPress={handleDownloadPlaylist}
                         style={({ pressed }) => [
                             styles.actionBtnCircle,
                             { backgroundColor: colors.backgroundElement },

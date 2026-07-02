@@ -81,7 +81,13 @@ export default function YTAuthModal({ isVisible, onClose, onSuccess }: YTAuthMod
                 <View style={styles.webviewContainer}>
                     <WebView
                         ref={webViewRef}
-                        source={{ uri: 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/' }}
+                        source={{
+                            uri: 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/',
+                            // 👇 YAHAN HEADER ADD KARNA HAI 👇
+                            headers: {
+                                'X-Requested-With': '' // Isay empty string bhej dein taake app ka package name leak na ho
+                            }
+                        }}
                         userAgent={USER_AGENT}
                         applicationNameForUserAgent=""
                         onLoadEnd={() => setIsLoading(false)}

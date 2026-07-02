@@ -1,9 +1,20 @@
 import { create } from 'zustand';
 import TrackPlayer from '@rntp/player';
 import { setupPlayer } from '@/services/playbackService';
-// 🌟 DATABASE IMPORTS ADD KIYE HAIN
-import { addFavoriteDB, removeFavoriteDB, getFavoritesDB, addToHistoryDB, getHistoryDB, getDownloadDB } from '@/services/db';
+import { 
+  addFavoriteDB, 
+  removeFavoriteDB, 
+  getFavoritesDB, 
+  addToHistoryDB, 
+  getHistoryDB, 
+  getDownloadDB,
+  addDownloadDB,
+  addPlaylistTrackDB,
+  savePlaylistMetadataDB 
+} from '@/services/db';
 import * as FileSystem from 'expo-file-system/legacy';
+import { downloadTrackFile } from '@/services/downloader';
+import { Alert } from 'react-native';
 
 const BACKEND_URL = 'http://192.168.43.179:5000';
 
@@ -56,6 +67,14 @@ interface PlaybackState {
     loadStoreData: () => Promise<void>;
     fetchLyricsForTrack: (track: Track) => Promise<void>;
     resolveTrackUri: (track: Track) => Promise<string | undefined>;
+
+    // 🌟 DOWNLOAD QUEUE ACTIONS
+    downloadQueue: { track: Track; playlistId?: string; playlistName?: string; playlistImage?: string; totalSongs?: number }[];
+    isDownloadingQueue: boolean;
+    currentDownloadProgress: number;
+    currentDownloadingTrackId: string | null;
+    downloadPlaylist: (playlistId: string, playlistName: string, playlistImage: string, tracks: Track[]) => Promise<void>;
+    processNextQueueDownload: () => Promise<void>;
 }
 
 const pendingResolutions = new Map<string, Promise<string | undefined>>();
@@ -78,6 +97,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     isLyricsLoading: false,
     lyricsError: null,
     loadedLyricsTrackId: null,
+
+    // 🌟 DOWNLOAD QUEUE INIT
+    downloadQueue: [],
+    isDownloadingQueue: false,
+    currentDownloadProgress: 0,
+    currentDownloadingTrackId: null,
 
     loadStoreData: async () => {
         try {
@@ -203,12 +228,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             const index = currentQueue.findIndex(t => t.id === track.id);
             const activeIndex = index !== -1 ? index : 0;
 
-            // 1. Update local Zustand state first
+            // 1. Update local Zustand state first (Silent play: isPlayerVisible is NOT changed to true)
             set({
                 currentTrack: track,
                 queue: currentQueue,
                 currentIndex: activeIndex,
-                isPlayerVisible: true,
                 position: 0,
                 duration: track.duration,
                 isPlaying: true
@@ -412,5 +436,125 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
         pendingResolutions.set(track.id, promise);
         return promise;
+    },
+
+    downloadPlaylist: async (playlistId: string, playlistName: string, playlistImage: string, tracks: Track[]) => {
+        const store = get();
+        
+        // 1. Prepare download queue items
+        const newQueueItems = [];
+        for (const track of tracks) {
+            // Check if track is already downloaded
+            const download = await getDownloadDB(track.id);
+            if (download && download.localPath) {
+                const fileInfo = await FileSystem.getInfoAsync(download.localPath);
+                if (fileInfo.exists) {
+                    // Track is already downloaded, link it to playlist tracks
+                    await addPlaylistTrackDB(playlistId, track, download.localPath);
+                    continue;
+                }
+            }
+            
+            // Not downloaded, add to queue
+            newQueueItems.push({
+                track,
+                playlistId,
+                playlistName,
+                playlistImage,
+                totalSongs: tracks.length
+            });
+        }
+        
+        if (newQueueItems.length === 0) {
+            // All tracks already downloaded, persist playlist metadata immediately
+            await savePlaylistMetadataDB(playlistId, playlistName, playlistImage);
+            Alert.alert("Success", "All songs in this playlist are already downloaded and saved offline!");
+            return;
+        }
+
+        // Add to existing downloadQueue
+        const updatedQueue = [...store.downloadQueue, ...newQueueItems];
+        set({ downloadQueue: updatedQueue });
+        
+        Alert.alert("Download Started", `Adding ${newQueueItems.length} songs to the download queue.`);
+
+        // Start processing if not already running
+        if (!store.isDownloadingQueue) {
+            set({ isDownloadingQueue: true });
+            get().processNextQueueDownload();
+        }
+    },
+
+    processNextQueueDownload: async () => {
+        const { downloadQueue } = get();
+        if (downloadQueue.length === 0) {
+            set({ isDownloadingQueue: false, currentDownloadingTrackId: null, currentDownloadProgress: 0 });
+            return;
+        }
+
+        const nextItem = downloadQueue[0];
+        const { track, playlistId, playlistName, playlistImage } = nextItem;
+        
+        set({ currentDownloadingTrackId: track.id, currentDownloadProgress: 0 });
+        console.log(`[Queue Downloader] Starting download for: ${track.title} (${track.id})`);
+
+        try {
+            // Call the refactored download function from Phase 1
+            const localUri = await downloadTrackFile(track, 'm4a', (progress: number) => {
+                set({ currentDownloadProgress: progress });
+            });
+
+            if (localUri) {
+                // Success: Get file size
+                let fileSize = '';
+                try {
+                    const fileInfo = await FileSystem.getInfoAsync(localUri);
+                    if (fileInfo.exists) {
+                        fileSize = (fileInfo.size / (1024 * 1024)).toFixed(2) + ' MB';
+                    }
+                } catch (sizeErr) {
+                    console.error("Error getting file size:", sizeErr);
+                }
+
+                // Fetch lyrics
+                let lyrics = '';
+                let lyricsType = 'none';
+                try {
+                    const cleanArtist = track.artist.split('•')[0].trim();
+                    const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(cleanArtist)}&id=${encodeURIComponent(track.id)}`;
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    if (data.type && data.type !== 'none') {
+                        lyrics = data.lyrics;
+                        lyricsType = data.type;
+                    }
+                } catch (lyrErr) {
+                    console.error("Error fetching lyrics:", lyrErr);
+                }
+
+                // Save to downloads table
+                await addDownloadDB(track, localUri, fileSize, lyrics, lyricsType);
+
+                // Link to offline playlist
+                if (playlistId) {
+                    await addPlaylistTrackDB(playlistId, track, localUri);
+
+                    // Check if playlist is fully completed (no other tracks for this playlist in queue)
+                    const remainingForThisPlaylist = get().downloadQueue.slice(1).filter(item => item.playlistId === playlistId);
+                    if (remainingForThisPlaylist.length === 0) {
+                        await savePlaylistMetadataDB(playlistId, playlistName || '', playlistImage || '');
+                        console.log(`[Queue Downloader] Playlist ${playlistName} completed and saved offline!`);
+                    }
+                }
+            } else {
+                console.error(`[Queue Downloader] Failed to download track: ${track.title}`);
+            }
+        } catch (err) {
+            console.error(`[Queue Downloader] Error in processing download for ${track.title}:`, err);
+        } finally {
+            // Remove from queue and run next
+            set((state) => ({ downloadQueue: state.downloadQueue.slice(1) }));
+            get().processNextQueueDownload();
+        }
     },
 }));

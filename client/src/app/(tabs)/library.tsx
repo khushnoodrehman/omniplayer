@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { useLocalAudio } from '@/hooks/use-local-audio';
+import { getPlaylistsDB } from '@/services/db';
 import MiniPlayer from '@/components/mini-player';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -38,6 +39,19 @@ export default function LibraryScreen() {
   const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
   const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
   const [activeTab, setActiveTab] = useState('Songs');
+  const [localPlaylists, setLocalPlaylists] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchPlaylists = async () => {
+      try {
+        const rows = await getPlaylistsDB();
+        setLocalPlaylists(rows);
+      } catch (err) {
+        console.error("Error fetching local playlists:", err);
+      }
+    };
+    fetchPlaylists();
+  }, [activeTab]);
 
   // Custom Hook use kar liya
   const { audioFiles, permissionResponse, requestPermission, loading } = useLocalAudio();
@@ -254,22 +268,36 @@ export default function LibraryScreen() {
             {/* Baqi Tabs Code Wese Hi Hai */}
             {activeTab === 'Playlists' && (
               <View style={{ gap: 12 }}>
-                {playlists.map((playlist) => (
-                  <Pressable
-                    key={playlist.id}
-                    style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                    onPress={() => alert(`Opening playlist: ${playlist.title}`)}
-                  >
-                    <Image source={{ uri: playlist.image }} style={styles.listItemArt} contentFit="cover" />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{playlist.title}</RNText>
-                      <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{playlist.subtitle}</RNText>
-                    </View>
-                    <Pressable onPress={() => alert(`Options for playlist: ${playlist.title}`)} style={styles.moreButton}>
-                      <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                {localPlaylists.length === 0 ? (
+                  <View style={[styles.centerState, { borderColor: 'transparent' }]}>
+                    <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>
+                      No downloaded playlists yet.
+                    </RNText>
+                  </View>
+                ) : (
+                  localPlaylists.map((playlist) => (
+                    <Pressable
+                      key={playlist.id}
+                      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+                      onPress={() => router.push(`/playlist?id=${playlist.id}`)}
+                    >
+                      {playlist.image ? (
+                        <Image source={{ uri: playlist.image }} style={styles.listItemArt} contentFit="cover" />
+                      ) : (
+                        <View style={[styles.folderIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
+                          <AppIcon ios="music.note.list" android="musical-notes-outline" size={22} color={colors.accent} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{playlist.name}</RNText>
+                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>Downloaded Playlist</RNText>
+                      </View>
+                      <Pressable onPress={() => alert(`Options for playlist: ${playlist.name}`)} style={styles.moreButton}>
+                        <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                      </Pressable>
                     </Pressable>
-                  </Pressable>
-                ))}
+                  ))
+                )}
               </View>
             )}
 
