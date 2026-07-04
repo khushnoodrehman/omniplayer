@@ -9,11 +9,9 @@ import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import MiniPlayer from '@/components/mini-player';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 const { width: screenWidth } = Dimensions.get('window');
-
-// ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://192.168.43.179:5000';
 
 interface HomeShelfItem {
   id: string;
@@ -42,6 +40,9 @@ export default function HomeScreen() {
     trending: [] as any[],
     newReleases: [] as any[],
     globalHits: [] as any[],
+    regionalHits: [] as any[],
+    chartsPlaylists: [] as any[],
+    countryName: '' as string,
     topTracks: [] as any[],
     shelves: [] as HomeShelf[],
     likedPlaylist: null as any
@@ -49,6 +50,8 @@ export default function HomeScreen() {
   const [showSpeedDial, setShowSpeedDial] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
+  const [continuationToken, setContinuationToken] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // 🌟 REF TO PREVENT STALE CLOSURES IN FOCUS EFFECT
   const homeDataRef = useRef(homeData);
@@ -81,24 +84,22 @@ export default function HomeScreen() {
             return;
           }
 
-          console.log("DEBUG COOKIE:", cookies); // Ye terminal (Expo Metro) mein dekho
-          console.log("[HomeScreen] Retrieved yt_cookies from AsyncStorage:", cookies ? "Cookies exist" : "No cookies found");
-          const headers: HeadersInit = {};
-          if (cookies) {
-            headers['Authorization'] = `Bearer ${cookies}`;
-          }
-          const response = await fetch(`${BACKEND_URL}/api/home`, { headers });
-          const data = await response.json();
+          console.log("[HomeScreen] Fetching home screen data client-side...");
+          const data = await InnerTubeClient.getHomeData();
           if (isMounted) {
             setHomeData({
               isLoggedIn: data.isLoggedIn || false,
               trending: data.trending || [],
               newReleases: data.newReleases || [],
               globalHits: data.globalHits || [],
+              regionalHits: data.regionalHits || [],
+              chartsPlaylists: data.chartsPlaylists || [],
+              countryName: data.countryName || '',
               topTracks: data.topTracks || [],
               shelves: data.shelves || [],
               likedPlaylist: data.likedPlaylist || null
             });
+            setContinuationToken(data.continuationToken || null);
           }
         } catch (error) {
           console.error("Home Data Fetch Error:", error);
@@ -161,6 +162,31 @@ export default function HomeScreen() {
     }
   };
 
+  const handlePlayPlaylistOrTrack = async (item: any, fallbackQueue: any[]) => {
+    if (!item || !item.id) return;
+    const isPlaylist = item.itemType === 'playlist' || item.itemType === 'album' || item.id.startsWith('VLPL') || item.id.startsWith('PL');
+
+    setLoadingTrackId(item.id);
+    try {
+      if (isPlaylist) {
+        console.log(`[HomeScreen] Fetching playlist tracks for playback: ${item.title}`);
+        const playlistDetails = await InnerTubeClient.getPlaylistDetails(item.id);
+        if (playlistDetails && playlistDetails.songs && playlistDetails.songs.length > 0) {
+          await handlePlay(playlistDetails.songs[0], playlistDetails.songs);
+        } else {
+          Alert.alert("Play Playlist", "No playable tracks found in this playlist.");
+        }
+      } else {
+        await handlePlay(item, fallbackQueue);
+      }
+    } catch (err) {
+      console.error("[HomeScreen] handlePlayPlaylistOrTrack error:", err);
+      Alert.alert("Error", "Failed to play item.");
+    } finally {
+      setLoadingTrackId(null);
+    }
+  };
+
   const chunkKeepListening = (items: any[]) => {
     const row1: any[] = [];
     const row2: any[] = [];
@@ -188,8 +214,11 @@ export default function HomeScreen() {
   };
 
   const renderNormalCard = (item: any, queue: any[], keyPrefix: string) => {
+    if (!item || !item.id) return null;
     const isPlayable = item.itemType === 'track';
     const isArtist = item.itemType === 'artist';
+    const title = typeof item.title === 'string' ? item.title : String(item.title || 'Unknown');
+    const artist = typeof item.artist === 'string' ? item.artist : String(item.artist || '');
 
     return (
       <Pressable
@@ -217,9 +246,9 @@ export default function HomeScreen() {
           )}
         </View>
         <View style={{ gap: 2, alignItems: isArtist ? 'center' : 'flex-start' }}>
-          <RNText style={[styles.songTitle, { color: colors.text, textAlign: isArtist ? 'center' : 'left' }]} numberOfLines={1}>{item.title}</RNText>
+          <RNText style={[styles.songTitle, { color: colors.text, textAlign: isArtist ? 'center' : 'left' }]} numberOfLines={1}>{title}</RNText>
           {!isArtist && (
-            <RNText style={[styles.songArtist, { color: colors.textSecondary }]} numberOfLines={1}>{item.artist}</RNText>
+            <RNText style={[styles.songArtist, { color: colors.textSecondary }]} numberOfLines={1}>{artist}</RNText>
           )}
         </View>
       </Pressable>
@@ -244,6 +273,26 @@ export default function HomeScreen() {
     }
   };
 
+  const loadMoreShelves = async () => {
+    if (isLoadingMore || !continuationToken) return;
+    setIsLoadingMore(true);
+    console.log('[Home] Loading more shelves...');
+    try {
+      const res = await InnerTubeClient.getHomeContinuation(continuationToken);
+      if (res.shelves.length > 0) {
+        setHomeData(prev => ({
+          ...prev,
+          shelves: [...prev.shelves, ...res.shelves]
+        }));
+      }
+      setContinuationToken(res.continuationToken);
+    } catch (err) {
+      console.error('[Home] Failed to load more shelves:', err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
@@ -260,6 +309,12 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
         scrollEventThrottle={16}
+        onScroll={({ nativeEvent }) => {
+          const isCloseToBottom = nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >= nativeEvent.contentSize.height - 400;
+          if (isCloseToBottom) {
+            loadMoreShelves();
+          }
+        }}
       >
         <View style={{ gap: 24 }}>
 
@@ -286,10 +341,15 @@ export default function HomeScreen() {
               <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
             </Pressable>
           </View>
-
-          {homeData.isLoggedIn ? (() => {
-            const speedDialShelf = homeData.shelves.find(s => s.title.toLowerCase().includes('speed dial'));
-            const otherShelves = homeData.shelves.filter(s => !s.title.toLowerCase().includes('speed dial'));
+          {(() => {
+            const speedDialShelf = homeData.shelves.find(s => {
+              const t = (s?.title || '').toLowerCase();
+              return t.includes('speed dial') || t.includes('listen again') || t.includes('quick picks');
+            });
+            const otherShelves = homeData.shelves.filter(s => {
+              const t = (s?.title || '').toLowerCase();
+              return !t.includes('speed dial') && !t.includes('listen again') && !t.includes('quick picks');
+            });
 
             return (
               <View style={{ gap: 24 }}>
@@ -353,13 +413,13 @@ export default function HomeScreen() {
                   </View>
                 )}
 
-                {/* ── SECTION B: Your YouTube Playlists (Second Row) ── */}
-                {homeData.likedPlaylist && (
+                {/* ── SECTION B: Your Playlists / Featured Charts ── */}
+                {homeData.likedPlaylist ? (
                   <View style={{ gap: 12, paddingHorizontal: 16 }}>
                     <View style={styles.resultsSectionHeader}>
                       <View style={{ gap: 2 }}>
                         <RNText style={[styles.sectionTitle, { color: colors.text }]}>Your YouTube playlists</RNText>
-                        <RNText style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Khushnood Rehman</RNText>
+                        <RNText style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Personal Library</RNText>
                       </View>
                     </View>
                     <Pressable
@@ -384,265 +444,187 @@ export default function HomeScreen() {
                       </View>
                     </Pressable>
                   </View>
+                ) : (
+                  homeData.chartsPlaylists && homeData.chartsPlaylists.length > 0 && (
+                    <View style={{ gap: 12 }}>
+                      <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>Featured Charts</RNText>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
+                          {homeData.chartsPlaylists.map((playlist, idx) => {
+                            const isPurple = idx % 3 === 0;
+                            const isCyan = idx % 3 === 1;
+                            const cardBg = isPurple ? styles.chartCardPurple : (isCyan ? styles.chartCardCyan : styles.chartCardOrange);
+                            return (
+                              <Pressable
+                                key={playlist.id || `charts-pl-${idx}`}
+                                style={[cardBg, { flexDirection: 'row', alignItems: 'center' }]}
+                                onPress={() => router.push(`/playlist?id=${playlist.id}`)}
+                              >
+                                <View style={{ flex: 1, justifyContent: 'flex-end', height: '100%', gap: 4 }}>
+                                  <RNText style={styles.chartTitle} numberOfLines={2}>{playlist.title}</RNText>
+                                  <RNText style={styles.chartSubtitle} numberOfLines={1}>{playlist.artist || 'YouTube Music'}</RNText>
+                                </View>
+                                {playlist.image ? (
+                                  <Image source={{ uri: playlist.image }} style={styles.chartMiniImage} contentFit="cover" />
+                                ) : (
+                                  <View style={styles.chartIconContainer}>
+                                    <AppIcon ios="chart.bar.xaxis" android="bar-chart" size={56} color="#ffffff" />
+                                  </View>
+                                )}
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  )
                 )}
 
                 {/* ── SECTION C: Other shelves ── */}
                 {otherShelves.map((shelf, shelfIdx) => {
-                  if (!shelf || !shelf.items || shelf.items.length === 0) return null;
+                  try {
+                    if (!shelf || !shelf.items || shelf.items.length === 0) return null;
 
-                  const titleLower = (shelf.title || '').toLowerCase();
-                  const isKeepListening = titleLower.includes('keep listening');
-                  const isMoods = titleLower.includes('moods') || titleLower.includes('genre');
-                  const isCommunity = titleLower.includes('community');
+                    const titleLower = (typeof shelf.title === 'string' ? shelf.title : '').toLowerCase();
+                    const shelfTitle = typeof shelf.title === 'string' ? shelf.title : String(shelf.title || '');
+                    const isKeepListening = titleLower.includes('keep listening');
+                    const isMoods = titleLower.includes('moods') || titleLower.includes('genre');
+                    const isCommunity = titleLower.includes('community');
 
-                  if (isKeepListening) {
-                    const chunked = chunkKeepListening(shelf.items);
+                    if (isKeepListening) {
+                      const chunked = chunkKeepListening(shelf.items);
+                      return (
+                        <View key={`shelf-kl-${shelfIdx}`} style={{ gap: 12 }}>
+                          <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>
+                            {shelfTitle}
+                          </RNText>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                            <View style={[styles.horizontalRow, { flexDirection: 'column', gap: 12, paddingBottom: 8 }]}>
+                              <View style={{ flexDirection: 'row', gap: 16 }}>
+                                {chunked.row1.filter(i => !!i).map((item, idx) => renderNormalCard(item, shelf.items, `kl-r1-${idx}`))}
+                              </View>
+                              <View style={{ flexDirection: 'row', gap: 16 }}>
+                                {chunked.row2.filter(i => !!i).map((item, idx) => renderNormalCard(item, shelf.items, `kl-r2-${idx}`))}
+                              </View>
+                            </View>
+                          </ScrollView>
+                        </View>
+                      );
+                    }
+
+                    if (isMoods) {
+                      return (
+                        <View key={`shelf-moods-${shelfIdx}`} style={{ gap: 12, paddingHorizontal: 16 }}>
+                          <RNText style={[styles.sectionTitle, { color: colors.text }]}>
+                            {shelfTitle}
+                          </RNText>
+                          <View style={styles.moodsGrid}>
+                            {shelf.items.filter((item: any) => !!item && !!item.id).slice(0, 8).map((item, idx) => (
+                              <Pressable
+                                key={`mood-${shelfIdx}-${idx}`}
+                                onPress={() => router.push(`/search?q=${encodeURIComponent(String(item.title || ''))}`)}
+                                style={({ pressed }) => [
+                                  styles.moodPill,
+                                  { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
+                                  pressed && styles.pressed
+                                ]}
+                              >
+                                <RNText style={[styles.moodText, { color: colors.text }]} numberOfLines={1}>
+                                  {String(item.title || '')}
+                                </RNText>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    if (isCommunity) {
+                      return (
+                        <View key={`shelf-comm-${shelfIdx}`} style={{ gap: 12, paddingHorizontal: 16 }}>
+                          <RNText style={[styles.sectionTitle, { color: colors.text }]}>
+                            {shelfTitle}
+                          </RNText>
+                          <View style={[styles.communityContainer, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
+                            <View style={styles.communitySongsList}>
+                              {shelf.items.slice(0, 4).map((item, idx) => (
+                                <Pressable
+                                  key={`comm-${item?.id ?? idx}-${idx}`}
+                                  onPress={() => {
+                                    if (item.itemType === 'track') {
+                                      handlePlay(item, shelf.items);
+                                    } else {
+                                      router.push(`/playlist?id=${item.id}`);
+                                    }
+                                  }}
+                                  style={styles.communitySongRow}
+                                >
+                                  <Image source={{ uri: item.image }} style={styles.communitySongImage} contentFit="cover" />
+                                  <View style={{ flex: 1, gap: 2 }}>
+                                    <RNText style={[styles.communitySongTitle, { color: colors.text }]} numberOfLines={1}>{String(item.title || '')}</RNText>
+                                    <RNText style={[styles.communitySongArtist, { color: colors.textSecondary }]} numberOfLines={1}>{String(item.artist || '')}</RNText>
+                                  </View>
+                                </Pressable>
+                              ))}
+                            </View>
+                            {/* Control Bar inside card */}
+                            <View style={styles.communityControlsRow}>
+                              <Pressable
+                                onPress={() => handlePlayPlaylistOrTrack(shelf.items[0], shelf.items)}
+                                style={styles.communityControlBtn}
+                                disabled={loadingTrackId === shelf.items[0]?.id}
+                              >
+                                {loadingTrackId === shelf.items[0]?.id ? (
+                                  <ActivityIndicator size="small" color={colors.text} />
+                                ) : (
+                                  <AppIcon ios="play.fill" android="play" size={16} color={colors.text} />
+                                )}
+                              </Pressable>
+                              <Pressable
+                                onPress={() => shelf.items.length > 1 && handlePlayPlaylistOrTrack(shelf.items[1], shelf.items)}
+                                style={styles.communityControlBtn}
+                                disabled={shelf.items.length > 1 && loadingTrackId === shelf.items[1]?.id}
+                              >
+                                {shelf.items.length > 1 && loadingTrackId === shelf.items[1]?.id ? (
+                                  <ActivityIndicator size="small" color={colors.text} />
+                                ) : (
+                                  <AppIcon ios="forward.fill" android="play-skip-forward" size={16} color={colors.text} />
+                                )}
+                              </Pressable>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    // Default Shelf Renderer (Circular for Artists, Square for Playlists/Tracks)
                     return (
-                      <View key={shelf.title || shelfIdx} style={{ gap: 12 }}>
+                      <View key={`shelf-default-${shelfIdx}`} style={{ gap: 12 }}>
                         <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>
-                          {shelf.title}
+                          {shelfTitle}
                         </RNText>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                          <View style={[styles.horizontalRow, { flexDirection: 'column', gap: 12, paddingBottom: 8 }]}>
-                            <View style={{ flexDirection: 'row', gap: 16 }}>
-                              {chunked.row1.map((item, idx) => renderNormalCard(item, shelf.items, `kl-r1-${idx}`))}
-                            </View>
-                            <View style={{ flexDirection: 'row', gap: 16 }}>
-                              {chunked.row2.map((item, idx) => renderNormalCard(item, shelf.items, `kl-r2-${idx}`))}
-                            </View>
+                          <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
+                            {shelf.items.filter((item: any) => !!item && !!item.id).map((item, index) => renderNormalCard(item, shelf.items, `${shelfIdx}-${index}`))}
                           </View>
                         </ScrollView>
                       </View>
                     );
+                  } catch (err) {
+                    console.error('[HomeScreen] Error rendering shelf at index', shelfIdx, ':', err);
+                    return null;
                   }
-
-                  if (isMoods) {
-                    return (
-                      <View key={shelf.title || shelfIdx} style={{ gap: 12, paddingHorizontal: 16 }}>
-                        <RNText style={[styles.sectionTitle, { color: colors.text }]}>
-                          {shelf.title}
-                        </RNText>
-                        <View style={styles.moodsGrid}>
-                          {shelf.items.slice(0, 8).map((item, idx) => (
-                            <Pressable
-                              key={`mood-${idx}`}
-                              onPress={() => router.push(`/search?q=${encodeURIComponent(item.title)}`)}
-                              style={({ pressed }) => [
-                                styles.moodPill,
-                                { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
-                                pressed && styles.pressed
-                              ]}
-                            >
-                              <RNText style={[styles.moodText, { color: colors.text }]} numberOfLines={1}>
-                                {item.title}
-                              </RNText>
-                            </Pressable>
-                          ))}
-                        </View>
-                      </View>
-                    );
-                  }
-
-                  if (isCommunity) {
-                    return (
-                      <View key={shelf.title || shelfIdx} style={{ gap: 12, paddingHorizontal: 16 }}>
-                        <RNText style={[styles.sectionTitle, { color: colors.text }]}>
-                          {shelf.title}
-                        </RNText>
-                        <View style={[styles.communityContainer, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
-                          <View style={styles.communitySongsList}>
-                            {shelf.items.slice(0, 4).map((item, idx) => (
-                              <Pressable
-                                key={`comm-${item.id}-${idx}`}
-                                onPress={() => handlePlay(item, shelf.items)}
-                                style={styles.communitySongRow}
-                              >
-                                <Image source={{ uri: item.image }} style={styles.communitySongImage} contentFit="cover" />
-                                <View style={{ flex: 1, gap: 2 }}>
-                                  <RNText style={[styles.communitySongTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</RNText>
-                                  <RNText style={[styles.communitySongArtist, { color: colors.textSecondary }]} numberOfLines={1}>{item.artist}</RNText>
-                                </View>
-                              </Pressable>
-                            ))}
-                          </View>
-                          {/* Control Bar inside card */}
-                          <View style={styles.communityControlsRow}>
-                            <Pressable onPress={() => handlePlay(shelf.items[0], shelf.items)} style={styles.communityControlBtn}>
-                              <AppIcon ios="play.fill" android="play" size={16} color={colors.text} />
-                            </Pressable>
-                            <Pressable onPress={() => handlePlay(shelf.items[1], shelf.items)} style={styles.communityControlBtn}>
-                              <AppIcon ios="forward.fill" android="play-skip-forward" size={16} color={colors.text} />
-                            </Pressable>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  }
-
-                  // Default Shelf Renderer (Circular for Artists, Square for Playlists/Tracks)
-                  return (
-                    <View key={shelf.title || shelfIdx} style={{ gap: 12 }}>
-                      <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>
-                        {shelf.title}
-                      </RNText>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                        <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
-                          {shelf.items.map((item, index) => renderNormalCard(item, shelf.items, `${shelfIdx}-${index}`))}
-                        </View>
-                      </ScrollView>
-                    </View>
-                  );
                 })}
+
               </View>
             );
-          })() : (
-            // --- NOT LOGGED IN USER INTERFACE (Old Home Screen) ---
-            <View style={{ gap: 24 }}>
-              {/* Section 1: Trending Now */}
-              {homeData.trending.length > 0 && (
-                <View style={{ gap: 12 }}>
-                  <View style={[styles.resultsSectionHeader, { paddingHorizontal: 16 }]}>
-                    <RNText style={[styles.sectionTitle, { color: colors.text }]}>Trending Now</RNText>
-                    <View style={{ flex: 1 }} />
-                    <RNText style={[styles.viewAllText, { color: colors.accent }]} onPress={() => alert('Viewing all trending...')}>VIEW ALL</RNText>
-                  </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
-                      {homeData.trending
-                        .filter((item) => item !== null && item !== undefined && item.id)
-                        .map((item, index) => (
-                          <Pressable
-                            key={item.id || `trending-${index}`}
-                            style={[styles.trendingCard, { gap: 8 }]}
-                            onPress={() => handlePlay(item, homeData.trending)}
-                          >
-                            <View style={[styles.cardImageContainer, { backgroundColor: colors.backgroundElement, position: 'relative' }]}>
-                              <Image source={{ uri: item.image }} style={styles.cardImage} contentFit="cover" />
-                              {loadingTrackId === item.id && (
-                                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}>
-                                  <ActivityIndicator size="small" color="#fff" />
-                                </View>
-                              )}
-                            </View>
-                            <View style={{ gap: 2 }}>
-                              <RNText style={[styles.songTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</RNText>
-                              <RNText style={[styles.songArtist, { color: colors.textSecondary }]} numberOfLines={1}>{item.artist}</RNText>
-                            </View>
-                          </Pressable>
-                        ))}
-                    </View>
-                  </ScrollView>
-                </View>
-              )}
+          })()}
 
-              {/* Section 2: Top Global Charts (Static Nav Cards) */}
-              <View style={{ gap: 12 }}>
-                <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>Top Global Charts</RNText>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
-                    <Pressable style={[styles.chartCardPurple, { flexDirection: 'row', alignItems: 'center' }]} onPress={() => alert('Opening Global Top 50...')}>
-                      <View style={{ flex: 1, justifyContent: 'flex-end', height: '100%' }}>
-                        <RNText style={styles.chartTitle}>Global Top 50</RNText>
-                        <RNText style={styles.chartSubtitle}>Updated Daily</RNText>
-                      </View>
-                      <View style={styles.chartIconContainer}>
-                        <AppIcon ios="chart.bar.xaxis" android="bar-chart" size={56} color="#ffffff" />
-                      </View>
-                    </Pressable>
-                    <Pressable style={[styles.chartCardCyan, { flexDirection: 'row', alignItems: 'center' }]} onPress={() => alert('Opening Viral Hits...')}>
-                      <View style={{ flex: 1, justifyContent: 'flex-end', height: '100%' }}>
-                        <RNText style={styles.chartTitle}>Viral Hits</RNText>
-                        <RNText style={styles.chartSubtitle}>Trending Worldwide</RNText>
-                      </View>
-                      <View style={styles.chartIconContainer}>
-                        <AppIcon ios="arrow.up.forward.app.fill" android="trending-up" size={56} color="#ffffff" />
-                      </View>
-                    </Pressable>
-                  </View>
-                </ScrollView>
-              </View>
-
-              {/* Section 3: Global Hits (Dynamic tracks) */}
-              {homeData.globalHits.length > 0 && (
-                <View style={{ gap: 12 }}>
-                  <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>Global Hits</RNText>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
-                      {homeData.globalHits
-                        .filter((item) => item !== null && item !== undefined && item.id)
-                        .map((item, index) => (
-                          <Pressable
-                            key={item.id || `global-${index}`}
-                            style={[styles.trendingCard, { gap: 8 }]}
-                            onPress={() => handlePlay(item, homeData.globalHits)}
-                          >
-                            <View style={[styles.cardImageContainer, { backgroundColor: colors.backgroundElement }]}>
-                              <Image source={{ uri: item.image }} style={styles.cardImage} contentFit="cover" />
-                              {loadingTrackId === item.id && (
-                                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}>
-                                  <ActivityIndicator size="small" color="#fff" />
-                                </View>
-                              )}
-                            </View>
-                            <View style={{ gap: 2 }}>
-                              <RNText style={[styles.songTitle, { color: colors.text }]} numberOfLines={1}>{item.title}</RNText>
-                              <RNText style={[styles.songArtist, { color: colors.textSecondary }]} numberOfLines={1}>{item.artist}</RNText>
-                            </View>
-                          </Pressable>
-                        ))}
-                    </View>
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* Section 4: New Releases */}
-              {homeData.newReleases.length > 0 && (
-                <View style={{ gap: 12 }}>
-                  <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>New Releases</RNText>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={[styles.horizontalRow, { flexDirection: 'row', gap: 16 }]}>
-                      {homeData.newReleases
-                        .filter((item) => item !== null && item !== undefined && item.id)
-                        .map((item, index) => (
-                          <Pressable
-                            key={item.id || `new-${index}`}
-                            style={[styles.releaseCard, { gap: 8 }]}
-                            onPress={() => handlePlay(item, homeData.newReleases)}
-                          >
-                            <View style={[styles.releaseImageContainer, { backgroundColor: colors.backgroundElement }]}>
-                              <Image source={{ uri: item.image }} style={styles.releaseImage} contentFit="cover" />
-                              {loadingTrackId === item.id && (
-                                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}>
-                                  <ActivityIndicator size="small" color="#fff" />
-                                </View>
-                              )}
-                            </View>
-                            <RNText style={[styles.releaseTitle, { color: colors.text }]} numberOfLines={2}>{item.title}</RNText>
-                          </Pressable>
-                        ))}
-                    </View>
-                  </ScrollView>
-                </View>
-              )}
+          {isLoadingMore && (
+            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={colors.accent} />
             </View>
           )}
-
-          {/* Section 5: Quick Actions (Static) */}
-          <View style={[styles.quickActionsRow, { flexDirection: 'row', width: screenWidth, gap: 16 }]}>
-            <Pressable style={[styles.quickActionButton, { flex: 1, gap: 8, alignItems: 'center', backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]} onPress={() => alert('Scanning local storage...')}>
-              <View style={[styles.actionIconWrapper, { backgroundColor: colors.accentLight }]}>
-                <AppIcon ios="folder.badge.plus" android="folder-open" size={22} color={colors.accent} />
-              </View>
-              <RNText style={[styles.actionText, { color: colors.text }]}>Scan Local Storage</RNText>
-            </Pressable>
-            <Pressable style={[styles.quickActionButton, { flex: 1, gap: 8, alignItems: 'center', backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]} onPress={() => alert('Importing playlist...')}>
-              <View style={[styles.actionIconWrapper, { backgroundColor: colors.accentLight }]}>
-                <AppIcon ios="link" android="link" size={22} color={colors.accent} />
-              </View>
-              <RNText style={[styles.actionText, { color: colors.text }]}>Import Playlist</RNText>
-            </Pressable>
-          </View>
-
           <View style={{ height: 96 }} />
         </View>
       </ScrollView>
@@ -670,8 +652,10 @@ const styles = StyleSheet.create({
   songArtist: { fontSize: 12 },
   chartCardPurple: { width: 270, height: 128, backgroundColor: '#593090', borderRadius: 16, padding: 16, position: 'relative' },
   chartCardCyan: { width: 270, height: 128, backgroundColor: '#004f58', borderRadius: 16, padding: 16, position: 'relative' },
-  chartTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
-  chartSubtitle: { fontSize: 12, color: '#ffffff', opacity: 0.8 },
+  chartCardOrange: { width: 270, height: 128, backgroundColor: '#c85a17', borderRadius: 16, padding: 16, position: 'relative' },
+  chartMiniImage: { width: 48, height: 48, borderRadius: 8, position: 'absolute', right: 16, top: 16 },
+  chartTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  chartSubtitle: { fontSize: 11, color: '#ffffff', opacity: 0.8 },
   chartIconContainer: { position: 'absolute', right: 16, top: 16, opacity: 0.25 },
   releaseCard: { width: 112 },
   releaseImageContainer: { borderRadius: 12, overflow: 'hidden', width: 112, height: 112 },

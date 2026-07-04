@@ -22,6 +22,7 @@ import LyricsView from '@/components/lyrics-view';
 import { downloadTrackFile } from '@/services/downloader';
 import { addDownloadDB, getDownloadDB } from '@/services/db';
 import { useIsPlaying, useProgress, useActiveMediaItem } from '@rntp/player';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const SURFACE_CONTAINER_HIGH = '#292a2d';
@@ -30,7 +31,6 @@ const BORDER_WHITE_10 = 'rgba(255,255,255,0.10)';
 const ON_SURFACE_VARIANT = '#ccc3d3';
 const PRIMARY_CONTAINER = '#bd93f9';
 const ON_PRIMARY_CONTAINER = '#4e2484';
-const BACKEND_URL = 'http://192.168.43.179:5000';
 
 const formatTime = (secs: number) => {
   const m = Math.floor(secs / 60);
@@ -130,9 +130,7 @@ export default function NowPlayingModal() {
       let lyricsType = 'none';
       try {
         const cleanArtist = currentTrack.artist.split('•')[0].trim();
-        const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(currentTrack.title)}&artist=${encodeURIComponent(cleanArtist)}&id=${encodeURIComponent(currentTrack.id)}`;
-        const response = await fetch(url);
-        const data = await response.json();
+        const data = await InnerTubeClient.getLyrics(currentTrack.title, cleanArtist, currentTrack.id);
         if (data.type && data.type !== 'none') {
           lyrics = data.lyrics;
           lyricsType = data.type;
@@ -356,7 +354,10 @@ export default function NowPlayingModal() {
                   />
                 </Pressable>
 
-                <Pressable onPress={playPrevious}>
+                 <Pressable onPress={() => {
+                  console.log(`[NowPlayingModal] 'Previous' button clicked at timestamp ${Date.now()}`);
+                  playPrevious();
+                }}>
                   <AppIcon
                     ios="backward.fill"
                     android="play-back"
@@ -391,7 +392,10 @@ export default function NowPlayingModal() {
                   />
                 </Pressable>
 
-                <Pressable onPress={playNext}>
+                <Pressable onPress={() => {
+                  console.log(`[NowPlayingModal] 'Next' button clicked at timestamp ${Date.now()}`);
+                  playNext();
+                }}>
                   <AppIcon
                     ios="forward.fill"
                     android="play-forward"

@@ -9,9 +9,9 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 const { width: screenWidth } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.43.179:5000';
 
 const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -36,16 +36,7 @@ export default function ArtistScreen() {
         const fetchArtistDetails = async () => {
             setIsLoading(true);
             try {
-                const cookies = await AsyncStorage.getItem('yt_cookies');
-                const headers: HeadersInit = {};
-                if (cookies) {
-                    headers['Authorization'] = `Bearer ${cookies}`;
-                }
-                const response = await fetch(`${BACKEND_URL}/api/artist/${id}`, { headers });
-                if (!response.ok) {
-                    throw new Error("Failed to fetch artist details");
-                }
-                const data = await response.json();
+                const data = await InnerTubeClient.getArtistDetails(id);
                 setArtist(data);
             } catch (error) {
                 console.error("Error fetching artist details:", error);

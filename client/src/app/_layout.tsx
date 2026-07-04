@@ -27,6 +27,7 @@ export default function TabLayout() {
       try {
         await setupPlayer();
         playbackService();
+        await usePlaybackStore.getState().syncWithNativePlayer();
       } catch (err) {
         console.error("Failed to setup player in _layout:", err);
       }
@@ -36,25 +37,7 @@ export default function TabLayout() {
     // Sync Zustand state when app returns to foreground
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
-        try {
-          const activeIndex = TrackPlayer.getActiveMediaItemIndex();
-          if (activeIndex !== null && activeIndex !== undefined) {
-            const store = usePlaybackStore.getState();
-            if (store.currentIndex !== activeIndex) {
-              const queueTrack = store.queue[activeIndex];
-              if (queueTrack) {
-                console.log(`[AppState] Syncing Zustand with active track at index: ${activeIndex}`);
-                usePlaybackStore.setState({
-                  currentIndex: activeIndex,
-                  currentTrack: queueTrack,
-                });
-                store.fetchLyricsForTrack(queueTrack);
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[AppState] Error syncing active track:', err);
-        }
+        usePlaybackStore.getState().syncWithNativePlayer();
       }
     };
 

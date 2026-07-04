@@ -1,7 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Track } from '@/store/usePlaybackStore';
-
-const BACKEND_URL = 'http://192.168.43.179:5000'; // Make sure IP is correct
+import { InnerTubeClient } from './InnerTubeClient';
 
 export const downloadTrackFile = async (
     track: Track, 
@@ -17,15 +16,11 @@ export const downloadTrackFile = async (
         const trackId = track.id;
         console.log(`[Downloader] Fetching stream URL for track ID: ${trackId}`);
 
-        // 1. Fetch raw stream URL from backend
-        const streamResponse = await fetch(`${BACKEND_URL}/api/stream?id=${trackId}`);
-        if (!streamResponse.ok) {
-            throw new Error(`Failed to fetch stream URL: ${streamResponse.statusText}`);
-        }
-        const streamData = await streamResponse.json();
+        // 1. Fetch raw stream URL directly via client-side InnerTube
+        const streamData = await InnerTubeClient.getStreamUrl(trackId);
         const streamUrl = streamData.stream_url;
         if (!streamUrl) {
-            throw new Error("No stream URL returned from server");
+            throw new Error("No stream URL returned from InnerTube");
         }
 
         // 2. Determine correct file extension based on mime type in stream URL

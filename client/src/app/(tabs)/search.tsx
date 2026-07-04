@@ -8,12 +8,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import MiniPlayer from '@/components/mini-player';
 import { getRecentSearchesDB, addRecentSearchDB, deleteRecentSearchDB, clearAllRecentSearchesDB } from '@/services/db';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
-
-// ⚠️ YAHAN APNE LAPTOP KA IPv4 ADDRESS LIKHO
-const BACKEND_URL = 'http://192.168.43.179:5000';
 
 // Helper to convert any backend value safely to a string for React Native Text components
 const safeString = (val: any, fallback = ''): string => {
@@ -222,12 +220,9 @@ export default function SearchScreen() {
     const delayDebounceFn = setTimeout(async () => {
       setIsFetching(true);
       try {
-        const response = await fetch(`${BACKEND_URL}/api/search?q=${encodeURIComponent(trimmed)}`);
-        const data = await response.json();
-        if (data.results) {
-          setApiResults(data.results);
-          setDisplayedCount(10); // Nayi search par wapas 10 results se start karo
-        }
+        const results = await InnerTubeClient.search(trimmed);
+        setApiResults(results);
+        setDisplayedCount(10); // Nayi search par wapas 10 results se start karo
       } catch (error) {
         console.error("Search Error:", error);
       } finally {
@@ -263,8 +258,7 @@ export default function SearchScreen() {
   const handlePlayYouTubeTrack = async (trackInfo: any) => {
     setLoadingTrackId(trackInfo.id);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/stream?id=${trackInfo.id}`);
-      const data = await response.json();
+      const data = await InnerTubeClient.getStreamUrl(trackInfo.id);
 
       if (data.stream_url) {
         const newTrack: Track = {

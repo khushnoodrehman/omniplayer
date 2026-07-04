@@ -73,6 +73,7 @@ export default function MiniPlayer() {
           <Pressable
             onPress={(e) => {
               e.stopPropagation();
+              console.log(`[MiniPlayer] 'Previous' button clicked at timestamp ${Date.now()}`);
               playPrevious();
             }}
             style={({ pressed }) => [styles.miniPlayerControlButton, pressed && styles.pressed]}
@@ -103,6 +104,7 @@ export default function MiniPlayer() {
           <Pressable
             onPress={(e) => {
               e.stopPropagation();
+              console.log(`[MiniPlayer] 'Next' button clicked at timestamp ${Date.now()}`);
               playNext();
             }}
             style={({ pressed }) => [styles.miniPlayerControlButton, pressed && styles.pressed]}

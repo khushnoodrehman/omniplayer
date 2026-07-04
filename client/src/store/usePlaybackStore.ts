@@ -15,8 +15,7 @@ import {
 import * as FileSystem from 'expo-file-system/legacy';
 import { downloadTrackFile } from '@/services/downloader';
 import { Alert } from 'react-native';
-
-const BACKEND_URL = 'http://192.168.43.179:5000';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 export interface Track {
     id: string;
@@ -48,6 +47,7 @@ interface PlaybackState {
     isRepeat: boolean;
     favoriteTracks: string[];
     history: Track[];
+    playRequestTimestamp: number;
 
     // 🌟 LYRICS CACHING STATE
     currentLyrics: ParsedLyric[];
@@ -65,6 +65,7 @@ interface PlaybackState {
     toggleShuffle: () => void;
     toggleRepeat: () => void;
     loadStoreData: () => Promise<void>;
+    syncWithNativePlayer: () => Promise<void>;
     fetchLyricsForTrack: (track: Track) => Promise<void>;
     resolveTrackUri: (track: Track) => Promise<string | undefined>;
 
@@ -91,6 +92,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     isRepeat: false,
     favoriteTracks: [],
     history: [],
+    playRequestTimestamp: 0,
 
     // 🌟 LYRICS STATE INIT
     currentLyrics: [],
@@ -114,6 +116,46 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             });
         } catch (error) {
             console.error("Error loading store data:", error);
+        }
+    },
+
+    syncWithNativePlayer: async () => {
+        try {
+            await setupPlayer();
+            const nativeQueue = TrackPlayer.getQueue();
+            const activeIndex = TrackPlayer.getActiveMediaItemIndex();
+            
+            if (nativeQueue && nativeQueue.length > 0 && activeIndex !== null && activeIndex !== undefined && activeIndex >= 0) {
+                const reconstructedQueue: Track[] = nativeQueue.map(item => ({
+                    id: item.mediaId || 'unknown-id',
+                    title: item.title || 'Unknown Title',
+                    artist: item.artist || 'Unknown Artist',
+                    image: typeof item.artworkUrl === 'string' ? item.artworkUrl : '',
+                    duration: item.duration || 0,
+                    sourceType: (typeof item.url === 'string' && (item.url.startsWith('file://') || item.url.startsWith('content://'))) ? 'local' : 'youtube',
+                    uri: typeof item.url === 'string' ? item.url : ''
+                }));
+
+                const activeTrack = reconstructedQueue[activeIndex];
+                const isPlaying = TrackPlayer.isPlaying();
+                const progress = TrackPlayer.getProgress();
+
+                set({
+                    queue: reconstructedQueue,
+                    currentIndex: activeIndex,
+                    currentTrack: activeTrack || null,
+                    isPlaying,
+                    position: progress.position || 0,
+                    duration: progress.duration || activeTrack?.duration || 0
+                });
+
+                if (activeTrack) {
+                    get().fetchLyricsForTrack(activeTrack);
+                }
+                console.log(`[PlaybackStore] Synchronized Zustand with Native Player. Playing: ${isPlaying}, Track: ${activeTrack?.title}`);
+            }
+        } catch (err) {
+            console.error('[PlaybackStore] Error syncing with native player:', err);
         }
     },
 
@@ -172,12 +214,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
             const targetId = track.sourceType === 'youtube' ? track.id : '';
 
-            const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(sendTitle)}&artist=${encodeURIComponent(sendArtist)}&id=${encodeURIComponent(targetId)}`;
-
             console.log(`[Zustand] Outgoing Lyrics Request -> Title: "${sendTitle}" | Artist: "${sendArtist}"`);
 
-            const response = await fetch(url);
-            const data = await response.json();
+            const data = await InnerTubeClient.getLyrics(sendTitle, sendArtist, targetId);
 
             if (data.type === 'synced') {
                 const parseLRC = (lrcText: string): ParsedLyric[] => {
@@ -208,6 +247,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     playTrack: async (track: Track, newQueue?: Track[]) => {
+        set({ playRequestTimestamp: Date.now() });
         try {
             await setupPlayer();
 
@@ -284,6 +324,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     playNext: async () => {
+        set({ playRequestTimestamp: Date.now() });
         const { queue, currentIndex, isRepeat } = get();
         if (queue.length === 0) return;
 
@@ -303,6 +344,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     playPrevious: async () => {
+        set({ playRequestTimestamp: Date.now() });
         const { queue, currentIndex } = get();
         if (queue.length === 0) return;
 
@@ -412,8 +454,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
                 if (!streamUrl && track.sourceType === 'youtube') {
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/stream?id=${track.id}`);
-                        const data = await response.json();
+                        const data = await InnerTubeClient.getStreamUrl(track.id);
                         if (data.stream_url) {
                             streamUrl = data.stream_url;
                             track.uri = streamUrl; // Update session memory
@@ -521,9 +562,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 let lyricsType = 'none';
                 try {
                     const cleanArtist = track.artist.split('•')[0].trim();
-                    const url = `${BACKEND_URL}/api/lyrics?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(cleanArtist)}&id=${encodeURIComponent(track.id)}`;
-                    const response = await fetch(url);
-                    const data = await response.json();
+                    const data = await InnerTubeClient.getLyrics(track.title, cleanArtist, track.id);
                     if (data.type && data.type !== 'none') {
                         lyrics = data.lyrics;
                         lyricsType = data.type;

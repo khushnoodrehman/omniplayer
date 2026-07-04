@@ -86,6 +86,13 @@ export async function playbackService() {
 
     TrackPlayer.addEventListener(Event.IsPlayingChanged, (event) => {
         usePlaybackStore.setState({ isPlaying: event.playing });
+        if (event.playing) {
+            const store = usePlaybackStore.getState();
+            if (store.playRequestTimestamp > 0) {
+                const latency = Date.now() - store.playRequestTimestamp;
+                console.log(`[PlaybackService] 🌟 SONG STARTED PLAYING! Total latency to start audio: ${latency}ms for track: "${store.currentTrack?.title}"`);
+            }
+        }
     });
 
     TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, (event) => {
@@ -136,13 +143,13 @@ export async function playbackService() {
                     }
                 }
 
-                // Pre-resolve neighbors (with 2-second delay to avoid server clogging)
+                // Pre-resolve neighbors (with 500ms delay to avoid server clogging)
                 if (!isSameTrack) {
                     setTimeout(() => {
                         resolveAdjacentTracks(index).catch(err => {
                             console.error('[PlaybackService] Delayed resolveAdjacentTracks error:', err);
                         });
-                    }, 2000);
+                    }, 500);
                 }
             }
         } catch (err) {
@@ -191,13 +198,13 @@ export async function backgroundPlaybackService(event: any) {
                     }
                 }
 
-                // Pre-resolve neighbors (with 2-second delay to avoid server clogging)
+                // Pre-resolve neighbors (with 500ms delay to avoid server clogging)
                 if (!isSameTrack) {
                     setTimeout(() => {
                         resolveAdjacentTracks(index).catch(err => {
                             console.error('[PlaybackService Background] Delayed resolveAdjacentTracks error:', err);
                         });
-                    }, 2000);
+                    }, 500);
                 }
             }
         } catch (err) {

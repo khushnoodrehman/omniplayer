@@ -9,9 +9,9 @@ import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { getPlaylistTracksDB, getPlaylistsDB } from '@/services/db';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 const { width: screenWidth } = Dimensions.get('window');
-const BACKEND_URL = 'http://192.168.43.179:5000';
 
 const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -37,16 +37,7 @@ export default function PlaylistScreen() {
         const fetchPlaylistDetails = async () => {
             setIsLoading(true);
             try {
-                const cookies = await AsyncStorage.getItem('yt_cookies');
-                const headers: HeadersInit = {};
-                if (cookies) {
-                    headers['Authorization'] = `Bearer ${cookies}`;
-                }
-                const response = await fetch(`${BACKEND_URL}/api/playlist/${id}`, { headers });
-                if (!response.ok) {
-                    throw new Error("Failed to fetch playlist details");
-                }
-                const data = await response.json();
+                const data = await InnerTubeClient.getPlaylistDetails(id);
                 setPlaylist(data);
             } catch (error) {
                 console.log("[PlaylistScreen] Network error, attempting offline DB fallback for playlist ID:", id);
