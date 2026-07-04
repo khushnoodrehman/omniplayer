@@ -9,6 +9,20 @@ index 81a20da..48dfd2e 100644
 -    implementation("expo.modules:expo-modules-core:1.11.8")
 +    implementation(project(":expo-modules-core"))
  }
+diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
+index d8b774f..ede4c8f 100644
+--- a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
++++ b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
+@@ -11,6 +11,9 @@
+ 
+ namespace ffmpeg {
+ 
++// Forward declaration of executeCommand
++int executeCommand(const std::vector<char*>& argv);
++
+ // Thread-local session for callbacks
+ extern thread_local FFmpegSession* currentSession;
+ 
 diff --git a/node_modules/ffmpeg-expo/scripts/postinstall.js b/node_modules/ffmpeg-expo/scripts/postinstall.js
 index 6aa8550..68ae53a 100644
 --- a/node_modules/ffmpeg-expo/scripts/postinstall.js
