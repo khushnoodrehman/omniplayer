@@ -56,7 +56,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "postinstall": "patch-package",
+    "postinstall": "patch-package && node node_modules/ffmpeg-expo/scripts/postinstall.js",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
