@@ -124,6 +124,19 @@ export async function playbackService() {
                     // Fetch lyrics and save history
                     store.fetchLyricsForTrack(currentTrack);
                     addToHistoryDB(currentTrack);
+
+                    // Fallback kickstart: Ensure playback starts if stalled or paused
+                    setTimeout(async () => {
+                        try {
+                            const playing = await TrackPlayer.isPlaying();
+                            if (!playing) {
+                                console.log(`[PlaybackService] Kickstarting playback for transition track: ${currentTrack.title}`);
+                                await TrackPlayer.play();
+                            }
+                        } catch (err) {
+                            console.error("[PlaybackService] Auto-play transition fallback error:", err);
+                        }
+                    }, 800);
                 }
 
                 // Handle transition to placeholder
@@ -139,7 +152,14 @@ export async function playbackService() {
                             ...item,
                             url: resolvedUrl
                         });
-                        await TrackPlayer.play();
+                        setTimeout(async () => {
+                            try {
+                                await TrackPlayer.play();
+                                console.log(`[PlaybackService] Auto-played next track after resolving: ${currentTrack.title}`);
+                            } catch (playErr) {
+                                console.error("[PlaybackService] Play resume error:", playErr);
+                            }
+                        }, 200);
                     }
                 }
 
@@ -179,6 +199,19 @@ export async function backgroundPlaybackService(event: any) {
                     });
                     store.fetchLyricsForTrack(currentTrack);
                     addToHistoryDB(currentTrack);
+
+                    // Fallback kickstart: Ensure playback starts if stalled or paused
+                    setTimeout(async () => {
+                        try {
+                            const playing = await TrackPlayer.isPlaying();
+                            if (!playing) {
+                                console.log(`[PlaybackService Background] Kickstarting playback for transition track: ${currentTrack.title}`);
+                                await TrackPlayer.play();
+                            }
+                        } catch (err) {
+                            console.error("[PlaybackService Background] Auto-play transition fallback error:", err);
+                        }
+                    }, 800);
                 }
 
                 // Resolve placeholder URL in the background
@@ -194,7 +227,14 @@ export async function backgroundPlaybackService(event: any) {
                             ...item,
                             url: resolvedUrl
                         });
-                        await TrackPlayer.play();
+                        setTimeout(async () => {
+                            try {
+                                await TrackPlayer.play();
+                                console.log(`[PlaybackService Background] Auto-played next track after resolving: ${currentTrack.title}`);
+                            } catch (playErr) {
+                                console.error("[PlaybackService Background] Play resume error:", playErr);
+                            }
+                        }, 200);
                     }
                 }
 

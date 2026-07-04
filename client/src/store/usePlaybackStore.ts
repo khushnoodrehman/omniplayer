@@ -122,8 +122,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     syncWithNativePlayer: async () => {
         try {
             await setupPlayer();
-            const nativeQueue = TrackPlayer.getQueue();
-            const activeIndex = TrackPlayer.getActiveMediaItemIndex();
+            const nativeQueue = await TrackPlayer.getQueue();
+            const activeIndex = await TrackPlayer.getActiveMediaItemIndex();
             
             if (nativeQueue && nativeQueue.length > 0 && activeIndex !== null && activeIndex !== undefined && activeIndex >= 0) {
                 const reconstructedQueue: Track[] = nativeQueue.map(item => ({
@@ -137,8 +137,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 }));
 
                 const activeTrack = reconstructedQueue[activeIndex];
-                const isPlaying = TrackPlayer.isPlaying();
-                const progress = TrackPlayer.getProgress();
+                const isPlaying = await TrackPlayer.isPlaying();
+                const progress = await TrackPlayer.getProgress();
 
                 set({
                     queue: reconstructedQueue,

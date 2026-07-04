@@ -792,7 +792,7 @@ export class InnerTubeClient {
     public static async getPlaylistDetails(playlistId: string): Promise<any> {
         try {
             let browseId = playlistId === 'LM' ? 'VLLM' : playlistId;
-            if ((browseId.startsWith('PL') || browseId.startsWith('OLAK5uy_')) && !browseId.startsWith('VL')) {
+            if ((browseId.startsWith('PL') || browseId.startsWith('OLAK5uy_') || browseId.startsWith('RD')) && !browseId.startsWith('VL')) {
                 browseId = 'VL' + browseId;
             }
 
