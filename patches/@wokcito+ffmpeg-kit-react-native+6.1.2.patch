@@ -1,5 +1,5 @@
 diff --git a/node_modules/@wokcito/ffmpeg-kit-react-native/android/build.gradle b/node_modules/@wokcito/ffmpeg-kit-react-native/android/build.gradle
-index 2456c18..9deea0c 100644
+index 2456c18..6751799 100644
 --- a/node_modules/@wokcito/ffmpeg-kit-react-native/android/build.gradle
 +++ b/node_modules/@wokcito/ffmpeg-kit-react-native/android/build.gradle
 @@ -30,11 +30,11 @@ android {
@@ -7,12 +7,12 @@ index 2456c18..9deea0c 100644
    }
  
 -  compileSdkVersion 33
-+  compileSdkVersion safeExtGet('compileSdkVersion', 35)
++  compileSdkVersion rootProject.ext.has('compileSdkVersion') ? rootProject.ext.get('compileSdkVersion') : 35
  
    defaultConfig {
      minSdkVersion safeExtGet('ffmpegKitPackage', 'https').contains("-lts") ? 16 : 24
 -    targetSdkVersion 33
-+    targetSdkVersion safeExtGet('targetSdkVersion', 35)
++    targetSdkVersion rootProject.ext.has('targetSdkVersion') ? rootProject.ext.get('targetSdkVersion') : 35
      versionCode 602
      versionName "6.0.2"
    }
