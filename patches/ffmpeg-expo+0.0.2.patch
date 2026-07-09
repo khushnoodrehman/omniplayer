@@ -2,12 +2,15 @@ diff --git a/node_modules/ffmpeg-expo/android/build.gradle.kts b/node_modules/ff
 index 81a20da..48dfd2e 100644
 --- a/node_modules/ffmpeg-expo/android/build.gradle.kts
 +++ b/node_modules/ffmpeg-expo/android/build.gradle.kts
-@@ -20,5 +20,5 @@ android {
+@@ -19,7 +19,7 @@ android {
+ 
          externalNativeBuild {
              cmake {
 -                cppFlags += "-std=c++17"
 +                cppFlags += "-std=c++20"
                  arguments += listOf(
+                     "-DANDROID_STL=c++_shared"
+                 )
 @@ -62,5 +62,5 @@ dependencies {
      implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
      
