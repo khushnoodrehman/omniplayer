@@ -61,7 +61,11 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-asset",
-      "ffmpeg-expo"
+      "ffmpeg-expo",
+      "expo-font",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
