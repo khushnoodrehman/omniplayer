@@ -61,7 +61,6 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-asset",
-      "ffmpeg-expo",
       "expo-font",
       "expo-image",
       "expo-status-bar",

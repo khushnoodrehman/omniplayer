@@ -31,7 +31,7 @@
     "expo-symbols": "~57.0.0",
     "expo-system-ui": "~57.0.0",
     "expo-web-browser": "~57.0.0",
-    "ffmpeg-expo": "^0.0.2",
+    "ffmpeg-kit-react-native": "^6.0.2",
     "jsmediatags": "^3.9.7",
     "patch-package": "^8.0.1",
     "react": "19.2.3",
@@ -55,7 +55,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "postinstall": "patch-package && node node_modules/ffmpeg-expo/scripts/postinstall.js",
+    "postinstall": "patch-package",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
