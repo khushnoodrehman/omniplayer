@@ -34,7 +34,6 @@
     "ffmpeg-expo": "^0.0.2",
     "jsmediatags": "^3.9.7",
     "patch-package": "^8.0.1",
-    "postinstall-postinstall": "^2.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
