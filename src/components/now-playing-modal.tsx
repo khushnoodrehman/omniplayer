@@ -19,9 +19,9 @@ import { AppIcon } from '@/components/ui/app-icon';
 
 import * as FileSystem from 'expo-file-system/legacy';
 import LyricsView from '@/components/lyrics-view';
-import { downloadTrackFile } from '@/services/downloader';
 import { addDownloadDB, getDownloadDB } from '@/services/db';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import DownloadSheet from '@/components/download-sheet';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const SURFACE_CONTAINER_HIGH = '#292a2d';
@@ -58,6 +58,10 @@ export default function NowPlayingModal() {
     isPlaying,
     position,
     duration,
+    downloadQueue,
+    currentDownloadingTrackId,
+    currentDownloadProgress,
+    downloadTrack,
   } = usePlaybackStore();
 
 
@@ -66,7 +70,7 @@ export default function NowPlayingModal() {
 
   // 🌟 NAYI STATES: Download Status aur Progress ke liye
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
-  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [isDownloadSheetVisible, setIsDownloadSheetVisible] = useState(false);
   const [seekBarWidth, setSeekBarWidth] = useState(screenWidth - 32);
 
   useEffect(() => {
@@ -91,7 +95,7 @@ export default function NowPlayingModal() {
     return () => {
       active = false;
     };
-  }, [currentTrack]);
+  }, [currentTrack, downloadQueue, currentDownloadingTrackId]);
 
   if (!currentTrack) return null;
 
@@ -104,55 +108,13 @@ export default function NowPlayingModal() {
     seek(clickRatio * duration);
   };
 
-  // 🌟 ASLI HANDLER: API call aur File System logic
-  const handleStartDownload = async () => {
-    if (!currentTrack) return;
-    setDownloadStatus('downloading');
-    setDownloadProgress(0);
-
-    // Downloader service ko call kiya directly format 'm4a' aur progress callback ke sath
-    const localUri = await downloadTrackFile(currentTrack, 'm4a', (progress) => {
-      setDownloadProgress(progress);
-    });
-
-    if (localUri) {
-      // Download successful
-      setDownloadStatus('downloaded');
-
-      // Fetch lyrics to store offline
-      let lyrics = '';
-      let lyricsType = 'none';
-      try {
-        const cleanArtist = currentTrack.artist.split('•')[0].trim();
-        const data = await InnerTubeClient.getLyrics(currentTrack.title, cleanArtist, currentTrack.id);
-        if (data.type && data.type !== 'none') {
-          lyrics = data.lyrics;
-          lyricsType = data.type;
-        }
-      } catch (err) {
-        console.error("Error fetching lyrics for offline storage:", err);
-      }
-
-      // Fetch downloaded file size client-side
-      let fileSize = '';
-      try {
-        const fileInfo = await FileSystem.getInfoAsync(localUri);
-        if (fileInfo.exists) {
-          fileSize = (fileInfo.size / (1024 * 1024)).toFixed(2) + ' MB';
-        }
-      } catch (err) {
-        console.error("Error getting file size for offline storage:", err);
-      }
-
-      // Database mein save kiya (including lyrics & file size)
-      await addDownloadDB(currentTrack, localUri, fileSize, lyrics, lyricsType);
-    } else {
-      // Download failed
-      setDownloadStatus('idle');
-      setDownloadProgress(0);
-      alert("Download failed. Check server logs or internet connection.");
-    }
-  };
+  // Compute active download status based on DB check and Queue state
+  const isEnqueued = downloadQueue.some(item => item.track.id === currentTrack.id);
+  const isDownloading = currentDownloadingTrackId === currentTrack.id;
+  
+  const activeDownloadStatus = downloadStatus === 'downloaded' 
+    ? 'downloaded' 
+    : (isDownloading ? 'downloading' : (isEnqueued ? 'enqueued' : 'idle'));
 
   const artGlowColor = colors.accent.replace(')', ', 0.30)').replace('rgb(', 'rgba(') ?? 'rgba(215,186,255,0.30)';
 
@@ -277,14 +239,16 @@ export default function NowPlayingModal() {
                     />
                   </Pressable>
 
-                  {/* 🌟 YAHAN CHANGE KIYA HAI: Direct download & progress indicator */}
+                  {/* Download Options Sheet trigger */}
                   <Pressable
                     onPress={() => {
-                      if (downloadStatus === 'idle') handleStartDownload();
+                      if (activeDownloadStatus === 'idle') {
+                        setIsDownloadSheetVisible(true);
+                      }
                     }}
                     style={styles.iconButton}
                   >
-                    {downloadStatus === 'idle' && (
+                    {activeDownloadStatus === 'idle' && (
                       <AppIcon
                         ios="arrow.down.to.line"
                         android="download-outline"
@@ -292,15 +256,23 @@ export default function NowPlayingModal() {
                         color={ON_SURFACE_VARIANT}
                       />
                     )}
-                    {downloadStatus === 'downloading' && (
+                    {activeDownloadStatus === 'enqueued' && (
+                      <AppIcon
+                        ios="clock"
+                        android="time-outline"
+                        size={22}
+                        color={colors.accent}
+                      />
+                    )}
+                    {activeDownloadStatus === 'downloading' && (
                       <View style={styles.progressContainer}>
                         <ActivityIndicator size="small" color={colors.accent} />
                         <RNText style={[styles.progressText, { color: colors.accent }]}>
-                          {Math.round(downloadProgress * 100)}%
+                          {Math.round(currentDownloadProgress * 100)}%
                         </RNText>
                       </View>
                     )}
-                    {downloadStatus === 'downloaded' && (
+                    {activeDownloadStatus === 'downloaded' && (
                       <AppIcon
                         ios="checkmark.circle.fill"
                         android="checkmark-circle"
@@ -539,6 +511,14 @@ export default function NowPlayingModal() {
 
         </View>
       </RNHostView>
+      <DownloadSheet
+        isVisible={isDownloadSheetVisible}
+        onClose={() => setIsDownloadSheetVisible(false)}
+        track={currentTrack}
+        onStartDownload={(options) => {
+          downloadTrack(currentTrack, options);
+        }}
+      />
     </BottomSheet>
   );
 }
