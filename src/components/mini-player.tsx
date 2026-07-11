@@ -5,21 +5,21 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 
-import { useIsPlaying, useProgress, useActiveMediaItem } from '@rntp/player';
-
 const { width: screenWidth } = Dimensions.get('window');
 const miniPlayerWidth = screenWidth - 32;
 
 export default function MiniPlayer() {
   const colors = useTheme();
-  const { currentTrack, togglePlay, setPlayerVisible, playNext, playPrevious } = usePlaybackStore();
-  const isPlaying = useIsPlaying();
-  const activeMediaItem = useActiveMediaItem();
-  const { position: nativePosition, duration: nativeDuration } = useProgress(0.5);
-
-  const isCurrentTrackLoaded = activeMediaItem?.mediaId === currentTrack?.id;
-  const position = isCurrentTrackLoaded ? nativePosition : 0;
-  const duration = isCurrentTrackLoaded ? nativeDuration : (currentTrack?.duration || 0);
+  const {
+    currentTrack,
+    togglePlay,
+    setPlayerVisible,
+    playNext,
+    playPrevious,
+    isPlaying,
+    position,
+    duration,
+  } = usePlaybackStore();
 
 
 

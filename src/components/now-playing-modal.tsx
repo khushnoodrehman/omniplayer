@@ -21,7 +21,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import LyricsView from '@/components/lyrics-view';
 import { downloadTrackFile } from '@/services/downloader';
 import { addDownloadDB, getDownloadDB } from '@/services/db';
-import { useIsPlaying, useProgress, useActiveMediaItem } from '@rntp/player';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -55,16 +54,11 @@ export default function NowPlayingModal() {
     isRepeat,
     toggleRepeat,
     playNext,
-    playPrevious
+    playPrevious,
+    isPlaying,
+    position,
+    duration,
   } = usePlaybackStore();
-
-  const isPlaying = useIsPlaying();
-  const activeMediaItem = useActiveMediaItem();
-  const { position: nativePosition, duration: nativeDuration } = useProgress(0.5);
-
-  const isCurrentTrackLoaded = activeMediaItem?.mediaId === currentTrack?.id;
-  const position = isCurrentTrackLoaded ? nativePosition : 0;
-  const duration = isCurrentTrackLoaded ? nativeDuration : (currentTrack?.duration || 0);
 
 
   const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);

@@ -33,53 +33,6 @@ export async function setupPlayer() {
     }
 }
 
-async function resolveAdjacentTracks(currentIndex: number) {
-    try {
-        const store = usePlaybackStore.getState();
-        const queue = store.queue;
-        if (queue.length === 0) return;
-
-        const nativeQueue = await TrackPlayer.getQueue();
-
-        // Resolve next track (index + 1)
-        const nextIndex = currentIndex + 1;
-        if (nextIndex < queue.length) {
-            const nextTrack = queue[nextIndex];
-            const nextMediaItem = nativeQueue[nextIndex];
-            if (nextMediaItem && nextMediaItem.url === 'http://placeholder.mp3') {
-                console.log(`[PlaybackService] Pre-resolving next track URL for index ${nextIndex}: ${nextTrack.title}`);
-                const resolvedUrl = await store.resolveTrackUri(nextTrack);
-                if (resolvedUrl) {
-                    await TrackPlayer.replaceMediaItem(nextIndex, {
-                        ...nextMediaItem,
-                        url: resolvedUrl
-                    });
-                    console.log(`[PlaybackService] Updated next track URL in native queue`);
-                }
-            }
-        }
-
-        // Resolve previous track (index - 1)
-        const prevIndex = currentIndex - 1;
-        if (prevIndex >= 0) {
-            const prevTrack = queue[prevIndex];
-            const prevMediaItem = nativeQueue[prevIndex];
-            if (prevMediaItem && prevMediaItem.url === 'http://placeholder.mp3') {
-                console.log(`[PlaybackService] Pre-resolving previous track URL for index ${prevIndex}: ${prevTrack.title}`);
-                const resolvedUrl = await store.resolveTrackUri(prevTrack);
-                if (resolvedUrl) {
-                    await TrackPlayer.replaceMediaItem(prevIndex, {
-                        ...prevMediaItem,
-                        url: resolvedUrl
-                    });
-                    console.log(`[PlaybackService] Updated previous track URL in native queue`);
-                }
-            }
-        }
-    } catch (err) {
-        console.error('[PlaybackService] resolveAdjacentTracks error:', err);
-    }
-}
 
 export async function playbackService() {
     console.log('[PlaybackService] Registering foreground event listeners');
@@ -152,6 +105,11 @@ export async function playbackService() {
                             ...item,
                             url: resolvedUrl
                         });
+                        try {
+                            await TrackPlayer.seekTo(0);
+                        } catch (seekErr) {
+                            console.error("[PlaybackService] Seek to 0 error:", seekErr);
+                        }
                         setTimeout(async () => {
                             try {
                                 await TrackPlayer.play();
@@ -166,7 +124,7 @@ export async function playbackService() {
                 // Pre-resolve neighbors (with 500ms delay to avoid server clogging)
                 if (!isSameTrack) {
                     setTimeout(() => {
-                        resolveAdjacentTracks(index).catch(err => {
+                        store.resolveAdjacentTracks(index).catch(err => {
                             console.error('[PlaybackService] Delayed resolveAdjacentTracks error:', err);
                         });
                     }, 500);
@@ -227,6 +185,11 @@ export async function backgroundPlaybackService(event: any) {
                             ...item,
                             url: resolvedUrl
                         });
+                        try {
+                            await TrackPlayer.seekTo(0);
+                        } catch (seekErr) {
+                            console.error("[PlaybackService Background] Seek to 0 error:", seekErr);
+                        }
                         setTimeout(async () => {
                             try {
                                 await TrackPlayer.play();
@@ -241,7 +204,7 @@ export async function backgroundPlaybackService(event: any) {
                 // Pre-resolve neighbors (with 500ms delay to avoid server clogging)
                 if (!isSameTrack) {
                     setTimeout(() => {
-                        resolveAdjacentTracks(index).catch(err => {
+                        store.resolveAdjacentTracks(index).catch(err => {
                             console.error('[PlaybackService Background] Delayed resolveAdjacentTracks error:', err);
                         });
                     }, 500);

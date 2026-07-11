@@ -68,6 +68,7 @@ interface PlaybackState {
     syncWithNativePlayer: () => Promise<void>;
     fetchLyricsForTrack: (track: Track) => Promise<void>;
     resolveTrackUri: (track: Track) => Promise<string | undefined>;
+    resolveAdjacentTracks: (currentIndex: number) => Promise<void>;
 
     // 🌟 DOWNLOAD QUEUE ACTIONS
     downloadQueue: { track: Track; playlistId?: string; playlistName?: string; playlistImage?: string; totalSongs?: number }[];
@@ -120,42 +121,61 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     syncWithNativePlayer: async () => {
-        try {
-            await setupPlayer();
-            const nativeQueue = await TrackPlayer.getQueue();
-            const activeIndex = await TrackPlayer.getActiveMediaItemIndex();
-            
-            if (nativeQueue && nativeQueue.length > 0 && activeIndex !== null && activeIndex !== undefined && activeIndex >= 0) {
-                const reconstructedQueue: Track[] = nativeQueue.map(item => ({
-                    id: item.mediaId || 'unknown-id',
-                    title: item.title || 'Unknown Title',
-                    artist: item.artist || 'Unknown Artist',
-                    image: typeof item.artworkUrl === 'string' ? item.artworkUrl : '',
-                    duration: item.duration || 0,
-                    sourceType: (typeof item.url === 'string' && (item.url.startsWith('file://') || item.url.startsWith('content://'))) ? 'local' : 'youtube',
-                    uri: typeof item.url === 'string' ? item.url : ''
-                }));
+        let attempts = 0;
+        const maxAttempts = 4;
+        const delayMs = 500;
 
-                const activeTrack = reconstructedQueue[activeIndex];
-                const isPlaying = await TrackPlayer.isPlaying();
-                const progress = await TrackPlayer.getProgress();
+        const performSync = async (): Promise<boolean> => {
+            try {
+                await setupPlayer();
+                const nativeQueue = await TrackPlayer.getQueue();
+                const activeIndex = await TrackPlayer.getActiveMediaItemIndex();
+                
+                console.log(`[PlaybackStore] syncWithNativePlayer attempt ${attempts + 1}: Queue size = ${nativeQueue?.length}, Active index = ${activeIndex}`);
 
-                set({
-                    queue: reconstructedQueue,
-                    currentIndex: activeIndex,
-                    currentTrack: activeTrack || null,
-                    isPlaying,
-                    position: progress.position || 0,
-                    duration: progress.duration || activeTrack?.duration || 0
-                });
+                if (nativeQueue && nativeQueue.length > 0 && activeIndex !== null && activeIndex !== undefined && activeIndex >= 0) {
+                    const reconstructedQueue: Track[] = nativeQueue.map(item => ({
+                        id: item.mediaId || 'unknown-id',
+                        title: item.title || 'Unknown Title',
+                        artist: item.artist || 'Unknown Artist',
+                        image: typeof item.artworkUrl === 'string' ? item.artworkUrl : '',
+                        duration: item.duration || 0,
+                        sourceType: (typeof item.url === 'string' && (item.url.startsWith('file://') || item.url.startsWith('content://'))) ? 'local' : 'youtube',
+                        uri: typeof item.url === 'string' ? item.url : ''
+                    }));
 
-                if (activeTrack) {
-                    get().fetchLyricsForTrack(activeTrack);
+                    const activeTrack = reconstructedQueue[activeIndex];
+                    const isPlaying = await TrackPlayer.isPlaying();
+                    const progress = await TrackPlayer.getProgress();
+
+                    set({
+                        queue: reconstructedQueue,
+                        currentIndex: activeIndex,
+                        currentTrack: activeTrack || null,
+                        isPlaying,
+                        position: progress.position || 0,
+                        duration: progress.duration || activeTrack?.duration || 0
+                    });
+
+                    if (activeTrack) {
+                        get().fetchLyricsForTrack(activeTrack);
+                    }
+                    console.log(`[PlaybackStore] Synchronized Zustand with Native Player. Playing: ${isPlaying}, Track: ${activeTrack?.title}`);
+                    return true;
                 }
-                console.log(`[PlaybackStore] Synchronized Zustand with Native Player. Playing: ${isPlaying}, Track: ${activeTrack?.title}`);
+            } catch (err) {
+                console.error('[PlaybackStore] Error during sync attempt:', err);
             }
-        } catch (err) {
-            console.error('[PlaybackStore] Error syncing with native player:', err);
+            return false;
+        };
+
+        while (attempts < maxAttempts) {
+            const success = await performSync();
+            if (success) break;
+            attempts++;
+            if (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
         }
     },
 
@@ -318,6 +338,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             await TrackPlayer.setMediaItems(mediaItems, activeIndex);
             await TrackPlayer.play();
 
+            // Pre-resolve neighbors (with a short delay to allow native player to settle)
+            setTimeout(() => {
+                get().resolveAdjacentTracks(activeIndex).catch(err => {
+                    console.error('[PlaybackStore] playTrack resolveAdjacentTracks error:', err);
+                });
+            }, 500);
+
         } catch (error) {
             console.error("Audio play error:", error);
         }
@@ -361,13 +388,20 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
     togglePlay: async () => {
         try {
-            if (get().isPlaying) {
+            const playing = await TrackPlayer.isPlaying();
+            if (playing) {
                 await TrackPlayer.pause();
             } else {
                 await TrackPlayer.play();
             }
         } catch (error) {
             console.error("Toggle play error:", error);
+            // Fallback to Zustand state if native call fails
+            if (get().isPlaying) {
+                await TrackPlayer.pause();
+            } else {
+                await TrackPlayer.play();
+            }
         }
     },
 
@@ -477,6 +511,53 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
         pendingResolutions.set(track.id, promise);
         return promise;
+    },
+
+    resolveAdjacentTracks: async (currentIndex: number) => {
+        try {
+            const queue = get().queue;
+            if (queue.length === 0) return;
+
+            const nativeQueue = await TrackPlayer.getQueue();
+
+            // Resolve next track (index + 1)
+            const nextIndex = currentIndex + 1;
+            if (nextIndex < queue.length) {
+                const nextTrack = queue[nextIndex];
+                const nextMediaItem = nativeQueue[nextIndex];
+                if (nextMediaItem && nextMediaItem.url === 'http://placeholder.mp3') {
+                    console.log(`[PlaybackStore] Pre-resolving next track URL for index ${nextIndex}: ${nextTrack.title}`);
+                    const resolvedUrl = await get().resolveTrackUri(nextTrack);
+                    if (resolvedUrl) {
+                        await TrackPlayer.replaceMediaItem(nextIndex, {
+                            ...nextMediaItem,
+                            url: resolvedUrl
+                        });
+                        console.log(`[PlaybackStore] Updated next track URL in native queue`);
+                    }
+                }
+            }
+
+            // Resolve previous track (index - 1)
+            const prevIndex = currentIndex - 1;
+            if (prevIndex >= 0) {
+                const prevTrack = queue[prevIndex];
+                const prevMediaItem = nativeQueue[prevIndex];
+                if (prevMediaItem && prevMediaItem.url === 'http://placeholder.mp3') {
+                    console.log(`[PlaybackStore] Pre-resolving previous track URL for index ${prevIndex}: ${prevTrack.title}`);
+                    const resolvedUrl = await get().resolveTrackUri(prevTrack);
+                    if (resolvedUrl) {
+                        await TrackPlayer.replaceMediaItem(prevIndex, {
+                            ...prevMediaItem,
+                            url: resolvedUrl
+                        });
+                        console.log(`[PlaybackStore] Updated previous track URL in native queue`);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[PlaybackStore] resolveAdjacentTracks error:', err);
+        }
     },
 
     downloadPlaylist: async (playlistId: string, playlistName: string, playlistImage: string, tracks: Track[]) => {
@@ -597,3 +678,34 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         }
     },
 }));
+
+let progressInterval: ReturnType<typeof setInterval> | null = null;
+let lastIsPlaying = false;
+
+usePlaybackStore.subscribe((state) => {
+    if (state.isPlaying !== lastIsPlaying) {
+        lastIsPlaying = state.isPlaying;
+        if (state.isPlaying) {
+            if (!progressInterval) {
+                console.log('[PlaybackStore] Starting progress polling');
+                progressInterval = setInterval(async () => {
+                    try {
+                        const progress = await TrackPlayer.getProgress();
+                        usePlaybackStore.setState({
+                            position: progress.position || 0,
+                            duration: progress.duration || 0
+                        });
+                    } catch (err) {
+                        console.error('[PlaybackStore] Progress polling error:', err);
+                    }
+                }, 500);
+            }
+        } else {
+            if (progressInterval) {
+                console.log('[PlaybackStore] Stopping progress polling');
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }
+    }
+});
