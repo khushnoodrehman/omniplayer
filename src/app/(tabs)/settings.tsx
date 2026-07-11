@@ -6,6 +6,7 @@ import { AppIcon } from '@/components/ui/app-icon';
 import MiniPlayer from '@/components/mini-player';
 import YTAuthModal from '@/components/yt-auth-modal'; // 🌟 Auth Modal Import
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -78,6 +79,7 @@ const SettingToggleRow = ({ iosIcon, androidIcon, title, value, onValueChange }:
 };
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useTheme();
 
@@ -224,6 +226,13 @@ export default function SettingsScreen() {
                 title="Scan Folders"
                 value="2 directories"
                 onPress={() => alert('Configure local folder paths')}
+              />
+              <SettingRow
+                iosIcon="arrow.down.circle"
+                androidIcon="download"
+                title="Download Manager"
+                value="Manage active downloads"
+                onPress={() => router.push('/download-manager')}
               />
               <SettingRow
                 iosIcon="trash"

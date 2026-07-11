@@ -132,7 +132,8 @@ export const fetchFallbackLyrics = async (
 export const downloadTrackFile = async (
     track: Track, 
     options: DownloadOptions, 
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    onStatusChange?: (status: 'downloading' | 'stitching') => void
 ): Promise<string | null> => {
     const trackId = track.id;
     
@@ -154,6 +155,7 @@ export const downloadTrackFile = async (
             }
         }
 
+        onStatusChange?.('downloading');
         console.log(`[Downloader] Fetching stream URL for track ID: ${trackId}`);
 
         // 2. Fetch raw stream URL directly via InnerTubeClient
@@ -293,13 +295,13 @@ export const downloadTrackFile = async (
             // Premium mode: FFmpeg stitching, metadata injection, and Public Export
             const cleanStringForFilename = (str: string): string => {
                 return str
-                    .replace(/[^a-zA-Z0-9 ]/g, '')
-                    .trim()
-                    .replace(/\s+/g, '_');
+                    .replace(/[^a-zA-Z0-9 ]/g, '') // Strip special characters
+                    .replace(/\s+/g, ' ')          // Collapse multiple spaces
+                    .trim();
             };
             const safeTitle = cleanStringForFilename(finalTitle) || "Track";
             const safeArtist = cleanStringForFilename(finalArtist) || "Artist";
-            const cleanFileName = `${safeTitle}_-_${safeArtist}.${options.downloadFormat}`;
+            const cleanFileName = `${safeTitle} - ${safeArtist}.${options.downloadFormat}`;
             const stitchedOutputPath = `${FileSystem.cacheDirectory}${cleanFileName}`;
             filesToDelete.push(stitchedOutputPath);
             console.log(`[Downloader] Premium mode: Stitching and transcoding audio to: ${stitchedOutputPath}`);
@@ -350,6 +352,7 @@ export const downloadTrackFile = async (
             // Output path
             ffmpegArgs.push(stitchedOutputPath);
 
+            onStatusChange?.('stitching');
             console.log(`[Downloader] Running FFmpeg with arguments:`, ffmpegArgs);
 
             // Execute FFmpeg kit asynchronously and await it via Promise
@@ -376,7 +379,7 @@ export const downloadTrackFile = async (
 
             // Move stitched output directly to device's public Media Library
             console.log("[Downloader] Saving stitched file to public Media Library...");
-            const audioAsset = await MediaLibrary.createAssetAsync(stitchedOutputPath);
+            const audioAsset = await MediaLibrary.createAssetAsync(encodeURI(stitchedOutputPath));
             console.log(`[Downloader] Created audio asset in MediaLibrary: ${audioAsset.uri}`);
 
             // Synced LRC file sidecar export using StorageAccessFramework (SAF) for Scoped Storage compliance
@@ -399,7 +402,7 @@ export const downloadTrackFile = async (
                         }
 
                         if (directoryUri) {
-                            let fileName = `${safeTitle}_-_${safeArtist}`;
+                            let fileName = `${safeTitle} - ${safeArtist}`;
                             if (!fileName.toLowerCase().endsWith('.lrc')) {
                                 fileName += '.lrc';
                             }

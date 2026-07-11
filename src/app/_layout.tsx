@@ -68,6 +68,7 @@ export default function TabLayout() {
         <Stack.Screen name="collection" />
         <Stack.Screen name="playlist" />
         <Stack.Screen name="artist" />
+        <Stack.Screen name="download-manager" />
       </Stack>
       <NowPlayingModal />
     </ThemeProvider>

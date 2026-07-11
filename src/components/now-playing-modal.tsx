@@ -242,7 +242,7 @@ export default function NowPlayingModal() {
                   {/* Download Options Sheet trigger */}
                   <Pressable
                     onPress={() => {
-                      if (activeDownloadStatus === 'idle') {
+                      if (activeDownloadStatus === 'idle' || activeDownloadStatus === 'downloaded') {
                         setIsDownloadSheetVisible(true);
                       }
                     }}

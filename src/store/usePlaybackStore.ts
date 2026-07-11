@@ -37,6 +37,22 @@ export interface DownloadOptions {
     exportSeparateLrcFile: boolean;
 }
 
+export interface DownloadQueueItem {
+    id: string;
+    track: Track;
+    playlistId?: string;
+    playlistName?: string;
+    playlistImage?: string;
+    totalSongs?: number;
+    downloadMode: 'fast' | 'premium';
+    downloadFormat: 'm4a' | 'mp3';
+    downloadQuality: '128' | '256';
+    exportSeparateLrcFile: boolean;
+    status: 'queued' | 'downloading' | 'stitching' | 'completed' | 'failed';
+    progress: number;
+    error?: string;
+}
+
 // 🌟 LYRIC INTERFACE
 export interface ParsedLyric {
     time: number;
@@ -92,23 +108,15 @@ interface PlaybackState {
     setLrcExportDirectoryUri: (uri: string | null) => void;
 
     // 🌟 DOWNLOAD QUEUE ACTIONS
-    downloadQueue: { 
-        track: Track; 
-        playlistId?: string; 
-        playlistName?: string; 
-        playlistImage?: string; 
-        totalSongs?: number;
-        downloadMode: 'fast' | 'premium';
-        downloadFormat: 'm4a' | 'mp3';
-        downloadQuality: '128' | '256';
-        exportSeparateLrcFile: boolean;
-    }[];
+    downloadQueue: DownloadQueueItem[];
     isDownloadingQueue: boolean;
     currentDownloadProgress: number;
     currentDownloadingTrackId: string | null;
     downloadTrack: (track: Track, options?: DownloadOptions) => Promise<void>;
     downloadPlaylist: (playlistId: string, playlistName: string, playlistImage: string, tracks: Track[], options?: DownloadOptions) => Promise<void>;
     processNextQueueDownload: () => Promise<void>;
+    cancelDownload: (queueItemId: string) => void;
+    clearFinishedDownloads: () => void;
 }
 
 const pendingResolutions = new Map<string, Promise<string | undefined>>();
@@ -632,15 +640,20 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         if (download && download.localPath) {
             const fileInfo = await FileSystem.getInfoAsync(download.localPath);
             if (fileInfo.exists) {
-                Alert.alert("Already Downloaded", "This song is already downloaded offline.");
-                return;
+                if (activeOptions.downloadMode === 'fast') {
+                    Alert.alert("Already Downloaded", "This song is already downloaded offline.");
+                    return;
+                }
             }
         }
 
         // Add to queue capturing current preferences
-        const queueItem = {
+        const queueItem: DownloadQueueItem = {
+            id: `${track.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             track,
-            ...activeOptions
+            ...activeOptions,
+            status: 'queued',
+            progress: 0
         };
 
         const updatedQueue = [...store.downloadQueue, queueItem];
@@ -649,7 +662,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         Alert.alert("Download Started", `Adding "${track.title}" to the download queue.`);
 
         // Start processing if not already running
-        if (!store.isDownloadingQueue) {
+        const isCurrentlyRunning = store.downloadQueue.some(item => item.status === 'downloading' || item.status === 'stitching');
+        if (!isCurrentlyRunning) {
             set({ isDownloadingQueue: true });
             get().processNextQueueDownload();
         }
@@ -665,8 +679,10 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         };
         
         // 1. Prepare download queue items
-        const newQueueItems = [];
-        for (const track of tracks) {
+        const newQueueItems: DownloadQueueItem[] = [];
+        const timestamp = Date.now();
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
             // Check if track is already downloaded
             const download = await getDownloadDB(track.id);
             if (download && download.localPath) {
@@ -680,12 +696,15 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             
             // Not downloaded, add to queue
             newQueueItems.push({
+                id: `${track.id}_${timestamp}_${i}`,
                 track,
                 playlistId,
                 playlistName,
                 playlistImage,
                 totalSongs: tracks.length,
-                ...activeOptions
+                ...activeOptions,
+                status: 'queued',
+                progress: 0
             });
         }
         
@@ -703,34 +722,80 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         Alert.alert("Download Started", `Adding ${newQueueItems.length} songs to the download queue.`);
 
         // Start processing if not already running
-        if (!store.isDownloadingQueue) {
+        const isCurrentlyRunning = store.downloadQueue.some(item => item.status === 'downloading' || item.status === 'stitching');
+        if (!isCurrentlyRunning) {
             set({ isDownloadingQueue: true });
             get().processNextQueueDownload();
         }
     },
 
+    cancelDownload: (queueItemId: string) => {
+        const { downloadQueue } = get();
+        const itemToCancel = downloadQueue.find(item => item.id === queueItemId);
+        
+        // Only cancel if it's queued or failed
+        if (itemToCancel && (itemToCancel.status === 'queued' || itemToCancel.status === 'failed')) {
+            set({
+                downloadQueue: downloadQueue.filter(item => item.id !== queueItemId)
+            });
+        }
+    },
+
+    clearFinishedDownloads: () => {
+        const { downloadQueue } = get();
+        set({
+            downloadQueue: downloadQueue.filter(item => item.status !== 'completed' && item.status !== 'failed')
+        });
+    },
+
     processNextQueueDownload: async () => {
         const { downloadQueue } = get();
-        if (downloadQueue.length === 0) {
+        
+        // Find first queued item
+        const nextItem = downloadQueue.find(item => item.status === 'queued');
+        if (!nextItem) {
             set({ isDownloadingQueue: false, currentDownloadingTrackId: null, currentDownloadProgress: 0 });
             return;
         }
 
-        const nextItem = downloadQueue[0];
-        const { track, playlistId, playlistName, playlistImage } = nextItem;
+        const { id: queueItemId, track, playlistId, playlistName, playlistImage } = nextItem;
         
-        set({ currentDownloadingTrackId: track.id, currentDownloadProgress: 0 });
+        set({ 
+            isDownloadingQueue: true,
+            currentDownloadingTrackId: track.id, 
+            currentDownloadProgress: 0 
+        });
+
+        // Update status of this item to 'downloading'
+        set((state) => ({
+            downloadQueue: state.downloadQueue.map(item => 
+                item.id === queueItemId ? { ...item, status: 'downloading', progress: 0 } : item
+            )
+        }));
+
         console.log(`[Queue Downloader] Starting download for: ${track.title} (${track.id})`);
 
         try {
-            // Call the refactored download function from Phase 1
+            // Call the refactored download function
             const localUri = await downloadTrackFile(track, {
                 downloadMode: nextItem.downloadMode,
                 downloadFormat: nextItem.downloadFormat,
                 downloadQuality: nextItem.downloadQuality,
                 exportSeparateLrcFile: nextItem.exportSeparateLrcFile
             }, (progress: number) => {
+                const numericProgress = Math.round(progress * 100);
                 set({ currentDownloadProgress: progress });
+                set((state) => ({
+                    downloadQueue: state.downloadQueue.map(item => 
+                        item.id === queueItemId ? { ...item, progress: numericProgress } : item
+                    )
+                }));
+            }, (status: 'downloading' | 'stitching') => {
+                set((state) => ({
+                    downloadQueue: state.downloadQueue.map(item => 
+                        item.id === queueItemId ? { ...item, status, progress: status === 'stitching' ? 95 : item.progress } : item
+                    )
+                }));
             });
 
             if (localUri) {
@@ -768,7 +833,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                         await addPlaylistTrackDB(playlistId, track, localUri);
 
                         // Check if playlist is fully completed (no other tracks for this playlist in queue)
-                        const remainingForThisPlaylist = get().downloadQueue.slice(1).filter(item => item.playlistId === playlistId);
+                        const remainingForThisPlaylist = get().downloadQueue.filter(item => 
+                            item.playlistId === playlistId && item.id !== queueItemId && item.status === 'queued'
+                        );
                         if (remainingForThisPlaylist.length === 0) {
                             await savePlaylistMetadataDB(playlistId, playlistName || '', playlistImage || '');
                             console.log(`[Queue Downloader] Playlist ${playlistName} completed and saved offline!`);
@@ -777,14 +844,30 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 } else {
                     console.log(`[Queue Downloader] Premium Download complete. Skipping DB insertion and offline playlist link for public export of: ${track.title}`);
                 }
+
+                // Update status of this item to 'completed'
+                set((state) => ({
+                    downloadQueue: state.downloadQueue.map(item => 
+                        item.id === queueItemId ? { ...item, status: 'completed', progress: 100 } : item
+                    )
+                }));
             } else {
                 console.error(`[Queue Downloader] Failed to download track: ${track.title}`);
+                set((state) => ({
+                    downloadQueue: state.downloadQueue.map(item => 
+                        item.id === queueItemId ? { ...item, status: 'failed', progress: 0, error: 'Download failed' } : item
+                    )
+                }));
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(`[Queue Downloader] Error in processing download for ${track.title}:`, err);
+            set((state) => ({
+                downloadQueue: state.downloadQueue.map(item => 
+                    item.id === queueItemId ? { ...item, status: 'failed', progress: 0, error: err?.message || 'Unknown error' } : item
+                )
+            }));
         } finally {
-            // Remove from queue and run next
-            set((state) => ({ downloadQueue: state.downloadQueue.slice(1) }));
+            // Process next queued download
             get().processNextQueueDownload();
         }
     },
