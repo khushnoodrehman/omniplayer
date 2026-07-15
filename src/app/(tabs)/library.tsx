@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -7,8 +7,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { useLocalAudio } from '@/hooks/use-local-audio';
-import { getPlaylistsDB } from '@/services/db';
+import { getPlaylistsDB, deletePlaylistDB, renamePlaylistDB, createPlaylistDB } from '@/services/db';
 import MiniPlayer from '@/components/mini-player';
+import { extractLocalMetadata } from '@/services/metadata';
+import TrackOptionsSheet from '@/components/track-options-sheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -29,6 +31,125 @@ const folders = [
   { id: '2', title: 'Music', subtitle: '45 audio files • /storage/emulated/0/Music' }
 ];
 
+interface LocalTrackItemProps {
+  track: any;
+  index: number;
+  colors: any;
+  favoriteTracks: string[];
+  toggleFavorite: (track: Track) => void;
+  playTrack: (track: Track, newQueue: Track[]) => void;
+  localQueue: Track[];
+  onTrackOptions: (track: Track) => void;
+}
+
+function LocalTrackItem({
+  track,
+  index,
+  colors,
+  favoriteTracks,
+  toggleFavorite,
+  playTrack,
+  localQueue,
+  onTrackOptions
+}: LocalTrackItemProps) {
+  const [meta, setMeta] = useState<{ title: string; artist: string; artwork: string | null }>({
+    title: track.filename.replace(/\.[^/.]+$/, ""),
+    artist: 'Local Audio',
+    artwork: track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null
+  });
+
+  useEffect(() => {
+    let active = true;
+    const loadMetadata = async () => {
+      try {
+        const result = await extractLocalMetadata(track.uri);
+        if (result && active) {
+          setMeta({
+            title: result.title || track.filename.replace(/\.[^/.]+$/, ""),
+            artist: result.artist || 'Local Audio',
+            artwork: result.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null)
+          });
+        }
+      } catch (err) {
+        // Fallback to default
+      }
+    };
+    loadMetadata();
+    return () => {
+      active = false;
+    };
+  }, [track.uri, track.albumId]);
+
+  const handlePlay = () => {
+    const updatedTrack: Track = {
+      ...localQueue[index],
+      title: meta.title,
+      artist: meta.artist,
+      image: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'
+    };
+
+    const updatedQueue = [...localQueue];
+    updatedQueue[index] = updatedTrack;
+
+    playTrack(updatedTrack, updatedQueue);
+  };
+
+  const currentTrackId = localQueue[index].id;
+  const isFavorited = favoriteTracks.includes(currentTrackId);
+
+  return (
+    <Pressable
+      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+      onPress={handlePlay}
+    >
+      <Image
+        source={{ uri: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
+        style={styles.listItemArt}
+        contentFit="cover"
+      />
+      <View style={{ flex: 1, gap: 2 }}>
+        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{meta.title}</RNText>
+        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{meta.artist}</RNText>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            toggleFavorite({
+              ...localQueue[index],
+              title: meta.title,
+              artist: meta.artist,
+              image: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'
+            });
+          }}
+          style={{ padding: 4 }}
+        >
+          <AppIcon
+            ios={isFavorited ? 'heart.fill' : 'heart'}
+            android={isFavorited ? 'heart' : 'heart-outline'}
+            size={20}
+            color={isFavorited ? colors.accent : colors.textSecondary}
+          />
+        </Pressable>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onTrackOptions({
+              ...localQueue[index],
+              title: meta.title,
+              artist: meta.artist,
+              image: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'
+            });
+          }}
+          style={styles.moreButton}
+        >
+          <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+        </Pressable>
+      </View>
+    </Pressable>
+  );
+}
+
 const tabs = ['Playlists', 'Songs', 'Artists & Albums', 'Folders'];
 
 export default function LibraryScreen() {
@@ -40,18 +161,98 @@ export default function LibraryScreen() {
   const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
   const [activeTab, setActiveTab] = useState('Songs');
   const [localPlaylists, setLocalPlaylists] = useState<any[]>([]);
+  const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
+  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState('');
+  const [renamePlaylistId, setRenamePlaylistId] = useState('');
+  const [renamePlaylistName, setRenamePlaylistName] = useState('');
+  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
+
+  const fetchPlaylists = async () => {
+    try {
+      const rows = await getPlaylistsDB();
+      setLocalPlaylists(rows);
+    } catch (err) {
+      console.error("Error fetching local playlists:", err);
+    }
+  };
 
   useEffect(() => {
-    const fetchPlaylists = async () => {
-      try {
-        const rows = await getPlaylistsDB();
-        setLocalPlaylists(rows);
-      } catch (err) {
-        console.error("Error fetching local playlists:", err);
-      }
-    };
     fetchPlaylists();
   }, [activeTab]);
+
+  const handleCreatePlaylist = async () => {
+    const trimmed = newPlaylistName.trim();
+    if (!trimmed) {
+      Alert.alert("Error", "Playlist name cannot be empty.");
+      return;
+    }
+    const newId = await createPlaylistDB(trimmed);
+    if (newId) {
+      setNewPlaylistName('');
+      setIsCreateModalVisible(false);
+      fetchPlaylists();
+    } else {
+      Alert.alert("Error", "Failed to create playlist.");
+    }
+  };
+
+  const handleRenamePlaylist = async () => {
+    const trimmed = renamePlaylistName.trim();
+    if (!trimmed) {
+      Alert.alert("Error", "Playlist name cannot be empty.");
+      return;
+    }
+    await renamePlaylistDB(renamePlaylistId, trimmed);
+    setIsRenameModalVisible(false);
+    fetchPlaylists();
+  };
+
+  const handleDeletePlaylist = (playlistId: string, name: string) => {
+    Alert.alert(
+      "Delete Playlist",
+      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deletePlaylistDB(playlistId);
+            fetchPlaylists();
+          }
+        }
+      ]
+    );
+  };
+
+  const handlePlaylistOptions = (playlist: any) => {
+    if (!playlist.id.startsWith('pl_')) {
+      Alert.alert("Downloaded Playlist", "This playlist was downloaded from YouTube Music and cannot be managed locally.");
+      return;
+    }
+    Alert.alert(
+      "Playlist Options",
+      `Manage playlist "${playlist.name}"`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Rename",
+          onPress: () => {
+            setRenamePlaylistId(playlist.id);
+            setRenamePlaylistName(playlist.name);
+            setIsRenameModalVisible(true);
+          }
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => handleDeletePlaylist(playlist.id, playlist.name)
+        }
+      ]
+    );
+  };
 
   // Custom Hook use kar liya
   const { audioFiles, permissionResponse, requestPermission, loading } = useLocalAudio();
@@ -218,48 +419,20 @@ export default function LibraryScreen() {
                 ) : (
                   // Mapping Real Audio Files
                   audioFiles.map((track, index) => (
-                    <Pressable
+                    <LocalTrackItem
                       key={track.id}
-                      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                      // Yahan hum particular gaana aur puri queue dono bhej rahe hain
-                      onPress={() => playTrack(localQueue[index], localQueue)}
-                    >
-                      <Image
-                        source={{ uri: track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
-                        style={styles.listItemArt}
-                        contentFit="cover"
-                      />
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>
-                          {track.filename.replace(/\.[^/.]+$/, "")}
-                        </RNText>
-                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                          {formatDuration(track.duration)} • Local Audio
-                        </RNText>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(localQueue[index]);
-                          }}
-                          style={{ padding: 4 }}
-                        >
-                          <AppIcon
-                            ios={favoriteTracks.includes(track.id) ? 'heart.fill' : 'heart'}
-                            android={favoriteTracks.includes(track.id) ? 'heart' : 'heart-outline'}
-                            size={20}
-                            color={favoriteTracks.includes(track.id) ? colors.accent : colors.textSecondary}
-                          />
-                        </Pressable>
-                        <Pressable onPress={(e) => {
-                          e.stopPropagation();
-                          alert(`Options for ${track.filename}`);
-                        }} style={styles.moreButton}>
-                          <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
-                        </Pressable>
-                      </View>
-                    </Pressable>
+                      track={track}
+                      index={index}
+                      colors={colors}
+                      favoriteTracks={favoriteTracks}
+                      toggleFavorite={toggleFavorite}
+                      playTrack={playTrack}
+                      localQueue={localQueue}
+                      onTrackOptions={(t) => {
+                        setSelectedTrack(t);
+                        setIsTrackOptionsVisible(true);
+                      }}
+                    />
                   ))
                 )}
               </View>
@@ -268,10 +441,32 @@ export default function LibraryScreen() {
             {/* Baqi Tabs Code Wese Hi Hai */}
             {activeTab === 'Playlists' && (
               <View style={{ gap: 12 }}>
+                {/* "+ Create Playlist" Button Row */}
+                <Pressable
+                  style={[
+                    styles.listItem, 
+                    { 
+                      backgroundColor: colors.backgroundElement, 
+                      borderStyle: 'dashed', 
+                      borderWidth: 1, 
+                      borderColor: colors.accent 
+                    }
+                  ]}
+                  onPress={() => setIsCreateModalVisible(true)}
+                >
+                  <View style={[styles.folderIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
+                    <AppIcon ios="plus" android="add" size={22} color={colors.accent} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <RNText style={[styles.listItemTitle, { color: colors.accent, fontWeight: '700' }]} numberOfLines={1}>Create Playlist</RNText>
+                    <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>Create a new custom playlist</RNText>
+                  </View>
+                </Pressable>
+
                 {localPlaylists.length === 0 ? (
                   <View style={[styles.centerState, { borderColor: 'transparent' }]}>
                     <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>
-                      No downloaded playlists yet.
+                      No playlists created or downloaded yet.
                     </RNText>
                   </View>
                 ) : (
@@ -290,9 +485,17 @@ export default function LibraryScreen() {
                       )}
                       <View style={{ flex: 1, gap: 2 }}>
                         <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{playlist.name}</RNText>
-                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>Downloaded Playlist</RNText>
+                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {playlist.id.startsWith('pl_') ? 'Custom Playlist' : 'Downloaded Playlist'}
+                        </RNText>
                       </View>
-                      <Pressable onPress={() => alert(`Options for playlist: ${playlist.name}`)} style={styles.moreButton}>
+                      <Pressable 
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handlePlaylistOptions(playlist);
+                        }} 
+                        style={styles.moreButton}
+                      >
                         <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
                       </Pressable>
                     </Pressable>
@@ -367,6 +570,85 @@ export default function LibraryScreen() {
         />
       </Pressable>
       <MiniPlayer />
+
+      {/* Create Playlist Modal */}
+      <Modal
+        visible={isCreateModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsCreateModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalContent, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
+            <RNText style={[styles.modalTitle, { color: colors.text }]}>New Playlist</RNText>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.cardBorder }]}
+              value={newPlaylistName}
+              onChangeText={setNewPlaylistName}
+              placeholder="Enter playlist name..."
+              placeholderTextColor={colors.textSecondary}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                onPress={() => setIsCreateModalVisible(false)}
+                style={[styles.modalButton, { borderColor: colors.cardBorder, borderWidth: 1 }]}
+              >
+                <RNText style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</RNText>
+              </Pressable>
+              <Pressable
+                onPress={handleCreatePlaylist}
+                style={[styles.modalButton, { backgroundColor: colors.accent }]}
+              >
+                <RNText style={{ color: '#fff', fontWeight: '700' }}>Create</RNText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Rename Playlist Modal */}
+      <Modal
+        visible={isRenameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsRenameModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalContent, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
+            <RNText style={[styles.modalTitle, { color: colors.text }]}>Rename Playlist</RNText>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.cardBorder }]}
+              value={renamePlaylistName}
+              onChangeText={setRenamePlaylistName}
+              placeholder="Enter new name..."
+              placeholderTextColor={colors.textSecondary}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                onPress={() => setIsRenameModalVisible(false)}
+                style={[styles.modalButton, { borderColor: colors.cardBorder, borderWidth: 1 }]}
+              >
+                <RNText style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</RNText>
+              </Pressable>
+              <Pressable
+                onPress={handleRenamePlaylist}
+                style={[styles.modalButton, { backgroundColor: colors.accent }]}
+              >
+                <RNText style={{ color: '#fff', fontWeight: '700' }}>Save</RNText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Track Options Bottom Sheet */}
+      <TrackOptionsSheet
+        isVisible={isTrackOptionsVisible}
+        onClose={() => setIsTrackOptionsVisible(false)}
+        track={selectedTrack}
+      />
     </View>
   );
 }
@@ -440,4 +722,10 @@ const styles = StyleSheet.create({
   quickAccessSubtitle: {
     fontSize: 11,
   },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: screenWidth - 64, padding: 24, borderRadius: 16, borderWidth: 1, gap: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  modalInput: { height: 48, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 15 },
+  modalButtons: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end', marginTop: 4 },
+  modalButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
 });

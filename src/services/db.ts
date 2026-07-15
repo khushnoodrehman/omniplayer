@@ -302,4 +302,32 @@ export const removeDownloadDB = async (id: string) => {
   }
 };
 
+export const deletePlaylistDB = async (playlistId: string) => {
+  try {
+    await db.runAsync('DELETE FROM playlists WHERE id = ?', [playlistId]);
+    await db.runAsync('DELETE FROM playlist_tracks WHERE playlistId = ?', [playlistId]);
+    console.log(`✅ Playlist deleted from DB: ${playlistId}`);
+  } catch (error) {
+    console.error('Error deleting playlist from DB:', error);
+  }
+};
+
+export const removeTrackFromPlaylistDB = async (playlistId: string, trackId: string) => {
+  try {
+    await db.runAsync('DELETE FROM playlist_tracks WHERE playlistId = ? AND trackId = ?', [playlistId, trackId]);
+    console.log(`✅ Track ${trackId} removed from playlist ${playlistId}`);
+  } catch (error) {
+    console.error('Error removing track from playlist in DB:', error);
+  }
+};
+
+export const renamePlaylistDB = async (playlistId: string, newName: string) => {
+  try {
+    await db.runAsync('UPDATE playlists SET name = ? WHERE id = ?', [newName, playlistId]);
+    console.log(`✅ Playlist renamed in DB to: ${newName}`);
+  } catch (error) {
+    console.error('Error renaming playlist in DB:', error);
+  }
+};
+
 export default db;

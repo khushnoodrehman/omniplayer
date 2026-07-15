@@ -22,6 +22,7 @@ import LyricsView from '@/components/lyrics-view';
 import { addDownloadDB, getDownloadDB } from '@/services/db';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import DownloadSheet from '@/components/download-sheet';
+import TrackOptionsSheet from '@/components/track-options-sheet';
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const SURFACE_CONTAINER_HIGH = '#292a2d';
@@ -71,6 +72,7 @@ export default function NowPlayingModal() {
   // 🌟 NAYI STATES: Download Status aur Progress ke liye
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
   const [isDownloadSheetVisible, setIsDownloadSheetVisible] = useState(false);
+  const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
   const [seekBarWidth, setSeekBarWidth] = useState(screenWidth - 32);
 
   useEffect(() => {
@@ -186,7 +188,7 @@ export default function NowPlayingModal() {
                 </View>
 
                 <Pressable
-                  onPress={() => alert('Track Options')}
+                  onPress={() => setIsTrackOptionsVisible(true)}
                   style={styles.headerMenuButton}
                 >
                   <AppIcon
@@ -518,6 +520,11 @@ export default function NowPlayingModal() {
         onStartDownload={(options) => {
           downloadTrack(currentTrack, options);
         }}
+      />
+      <TrackOptionsSheet
+        isVisible={isTrackOptionsVisible}
+        onClose={() => setIsTrackOptionsVisible(false)}
+        track={currentTrack}
       />
     </BottomSheet>
   );

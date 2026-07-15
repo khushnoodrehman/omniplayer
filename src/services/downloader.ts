@@ -4,6 +4,7 @@ import { FFmpegKit, ReturnCode, FFmpegSession } from '@wokcito/ffmpeg-kit-react-
 import { Track, DownloadOptions, usePlaybackStore } from '@/store/usePlaybackStore';
 import { InnerTubeClient } from './InnerTubeClient';
 import { Platform } from 'react-native';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 
 // Helper to clean LRC lyrics format into plain text
 export const cleanLrcToPlainText = (lrc: string): string => {
@@ -136,11 +137,25 @@ export const downloadTrackFile = async (
     onStatusChange?: (status: 'downloading' | 'stitching') => void
 ): Promise<string | null> => {
     const trackId = track.id;
+    let channelId = 'downloads';
     
     // Store list of files to delete in finally block for strict GC
     const filesToDelete: string[] = [];
 
     try {
+        if (Platform.OS === 'android') {
+            try {
+                await notifee.requestPermission();
+                channelId = await notifee.createChannel({
+                    id: 'downloads',
+                    name: 'Active Downloads',
+                    importance: AndroidImportance.LOW,
+                });
+            } catch (notifErr) {
+                console.warn('[Downloader] Notifee initialization failed:', notifErr);
+            }
+        }
+
         if (track.sourceType === 'local') {
             console.warn("[Downloader] Track is already local!");
             return track.uri || null;
@@ -206,9 +221,28 @@ export const downloadTrackFile = async (
             rawAudioPath,
             {},
             (downloadProgress) => {
-                if (onProgress && downloadProgress.totalBytesExpectedToWrite > 0) {
+                if (downloadProgress.totalBytesExpectedToWrite > 0) {
                     const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-                    onProgress(progress);
+                    if (onProgress) {
+                        onProgress(progress);
+                    }
+                    if (Platform.OS === 'android') {
+                        const percent = Math.round(progress * 100);
+                        notifee.displayNotification({
+                            id: trackId,
+                            title: `Downloading: ${track.title}`,
+                            body: `Progress: ${percent}%`,
+                            android: {
+                                channelId,
+                                onlyAlertOnce: true,
+                                ongoing: true,
+                                progress: {
+                                    max: 100,
+                                    current: percent,
+                                },
+                            },
+                        }).catch(err => console.warn('[Downloader] Notifee progress update failed:', err));
+                    }
                 }
             }
         );
@@ -290,6 +324,18 @@ export const downloadTrackFile = async (
             });
 
             console.log(`[Downloader] Fast Mode - Saved to: ${finalFileUri}`);
+            if (Platform.OS === 'android') {
+                notifee.displayNotification({
+                    id: trackId,
+                    title: 'Download Complete',
+                    body: track.title,
+                    android: {
+                        channelId,
+                        onlyAlertOnce: false,
+                        ongoing: false,
+                    },
+                }).catch(err => console.warn('[Downloader] Notifee success notification failed:', err));
+            }
             return finalFileUri;
         } else {
             // Premium mode: FFmpeg stitching, metadata injection, and Public Export
@@ -353,6 +399,23 @@ export const downloadTrackFile = async (
             ffmpegArgs.push(stitchedOutputPath);
 
             onStatusChange?.('stitching');
+            if (Platform.OS === 'android') {
+                notifee.displayNotification({
+                    id: trackId,
+                    title: `Stitching & Transcoding: ${track.title}`,
+                    body: `Processing audio file...`,
+                    android: {
+                        channelId,
+                        onlyAlertOnce: true,
+                        ongoing: true,
+                        progress: {
+                            max: 100,
+                            current: 0,
+                            indeterminate: true,
+                        },
+                    },
+                }).catch(err => console.warn('[Downloader] Notifee stitching update failed:', err));
+            }
             console.log(`[Downloader] Running FFmpeg with arguments:`, ffmpegArgs);
 
             // Execute FFmpeg kit asynchronously and await it via Promise
@@ -431,11 +494,35 @@ export const downloadTrackFile = async (
             }
 
             console.log(`[Downloader] Premium download completed successfully for "${track.title}"!`);
+            if (Platform.OS === 'android') {
+                notifee.displayNotification({
+                    id: trackId,
+                    title: 'Download Complete',
+                    body: track.title,
+                    android: {
+                        channelId,
+                        onlyAlertOnce: false,
+                        ongoing: false,
+                    },
+                }).catch(err => console.warn('[Downloader] Notifee success notification failed:', err));
+            }
             return audioAsset.uri;
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("[Downloader] ❌ Error during download processing:", error);
+        if (Platform.OS === 'android') {
+            notifee.displayNotification({
+                id: trackId,
+                title: 'Download Failed',
+                body: `${track.title} - ${error?.message || 'Unknown error'}`,
+                android: {
+                    channelId,
+                    onlyAlertOnce: false,
+                    ongoing: false,
+                },
+            }).catch(e => console.warn('[Downloader] Notifee failure notification failed:', e));
+        }
         return null;
     } finally {
         // Strict Garbage Collection - clean up all temporary cached items to prevent storage leaks

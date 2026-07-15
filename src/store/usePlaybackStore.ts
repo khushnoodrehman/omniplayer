@@ -17,6 +17,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { downloadTrackFile } from '@/services/downloader';
 import { Alert } from 'react-native';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import { extractLocalMetadata } from '@/services/metadata';
 
 export interface Track {
     id: string;
@@ -382,6 +383,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 return;
             }
 
+            // Lazily extract local ID3/embedded metadata if local source
+            if (track.sourceType === 'local' && resolvedCurrentUrl) {
+                try {
+                    const meta = await extractLocalMetadata(resolvedCurrentUrl);
+                    if (meta) {
+                        if (meta.title) track.title = meta.title;
+                        if (meta.artist) track.artist = meta.artist;
+                        if (meta.artwork) track.image = meta.artwork;
+                        set({ currentTrack: { ...track } });
+                    }
+                } catch (metaErr) {
+                    console.warn('[PlaybackStore] Lazy metadata extraction failed:', metaErr);
+                }
+            }
+
             // 3. Set queue in player immediately with the resolved URL for the active track.
             const mediaItems = currentQueue.map((t, idx) => {
                 const mediaDuration = (t.duration && t.duration > 0) ? t.duration : undefined;
@@ -394,9 +410,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 return {
                     mediaId: t.id,
                     url: targetUrl,
-                    title: t.title,
-                    artist: t.artist,
-                    artworkUrl: t.image,
+                    title: idx === activeIndex ? track.title : t.title,
+                    artist: idx === activeIndex ? track.artist : t.artist,
+                    artworkUrl: idx === activeIndex ? track.image : t.image,
                     duration: mediaDuration,
                 };
             });

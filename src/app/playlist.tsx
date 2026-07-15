@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text as RNText, Pressable, ScrollView, Dimensions, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, View, Text as RNText, Pressable, ScrollView, Dimensions, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Image } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
-import { getPlaylistTracksDB, getPlaylistsDB } from '@/services/db';
+import { getPlaylistTracksDB, getPlaylistsDB, deletePlaylistDB, renamePlaylistDB } from '@/services/db';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import TrackOptionsSheet from '@/components/track-options-sheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -31,14 +32,40 @@ export default function PlaylistScreen() {
     const [playlist, setPlaylist] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaved, setIsSaved] = useState(false);
+    const [reloadTrigger, setReloadTrigger] = useState(0);
+
+    const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
+    const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+    const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
+    const [renamePlaylistName, setRenamePlaylistName] = useState('');
 
     useEffect(() => {
         if (!id) return;
         const fetchPlaylistDetails = async () => {
             setIsLoading(true);
             try {
-                const data = await InnerTubeClient.getPlaylistDetails(id);
-                setPlaylist(data);
+                // If custom local playlist, load directly from DB and skip API query
+                if (id.startsWith('pl_')) {
+                    const localTracks = await getPlaylistTracksDB(id);
+                    const allLocalPlaylists = await getPlaylistsDB();
+                    const matchedPlaylist = allLocalPlaylists.find(p => p.id === id);
+                    
+                    if (matchedPlaylist) {
+                        setPlaylist({
+                            id: matchedPlaylist.id,
+                            title: matchedPlaylist.name,
+                            image: matchedPlaylist.image,
+                            songs: localTracks || [],
+                            trackCount: localTracks?.length || 0,
+                            duration: ""
+                        });
+                    } else {
+                        throw new Error("Custom playlist not found in database.");
+                    }
+                } else {
+                    const data = await InnerTubeClient.getPlaylistDetails(id);
+                    setPlaylist(data);
+                }
             } catch (error) {
                 console.log("[PlaylistScreen] Network error, attempting offline DB fallback for playlist ID:", id);
                 try {
@@ -67,7 +94,7 @@ export default function PlaylistScreen() {
             }
         };
         fetchPlaylistDetails();
-    }, [id]);
+    }, [id, reloadTrigger]);
 
     const handleDownloadPlaylist = () => {
         if (playlist && playlist.songs && playlist.songs.length > 0) {
@@ -91,7 +118,59 @@ export default function PlaylistScreen() {
     };
 
     const handleTrackOptions = (track: Track) => {
-        Alert.alert("Track Options", `Options for "${track.title}"`);
+        setSelectedTrack(track);
+        setIsTrackOptionsVisible(true);
+    };
+
+    const handlePlaylistOptions = () => {
+        Alert.alert(
+            "Playlist Options",
+            `Manage playlist "${playlist.title}"`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Rename",
+                    onPress: () => {
+                        setRenamePlaylistName(playlist.title);
+                        setIsRenameModalVisible(true);
+                    }
+                },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => handleDeletePlaylist()
+                }
+            ]
+        );
+    };
+
+    const handleDeletePlaylist = () => {
+        Alert.alert(
+            "Delete Playlist",
+            `Are you sure you want to delete "${playlist.title}"? This cannot be undone.`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        await deletePlaylistDB(playlist.id);
+                        router.back();
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleRenamePlaylist = async () => {
+        const trimmed = renamePlaylistName.trim();
+        if (!trimmed) {
+            Alert.alert("Error", "Playlist name cannot be empty.");
+            return;
+        }
+        await renamePlaylistDB(playlist.id, trimmed);
+        setIsRenameModalVisible(false);
+        setReloadTrigger(prev => prev + 1);
     };
 
     if (isLoading) {
@@ -123,9 +202,15 @@ export default function PlaylistScreen() {
                     <AppIcon ios="arrow.left" android="arrow-back" size={24} color={colors.text} />
                 </Pressable>
                 <RNText style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Playlist</RNText>
-                <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
-                    <AppIcon ios="magnifyingglass" android="search" size={24} color={colors.text} />
-                </Pressable>
+                {id?.startsWith('pl_') ? (
+                    <Pressable onPress={handlePlaylistOptions} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+                        <AppIcon ios="ellipsis" android="ellipsis-vertical" size={24} color={colors.text} />
+                    </Pressable>
+                ) : (
+                    <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+                        <AppIcon ios="magnifyingglass" android="search" size={24} color={colors.text} />
+                    </Pressable>
+                )}
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -268,6 +353,51 @@ export default function PlaylistScreen() {
                 </View>
             </ScrollView>
             <MiniPlayer />
+
+            {/* Track Options Bottom Sheet */}
+            <TrackOptionsSheet
+                isVisible={isTrackOptionsVisible}
+                onClose={() => setIsTrackOptionsVisible(false)}
+                track={selectedTrack}
+                playlistId={id}
+                onTrackRemoved={() => setReloadTrigger(prev => prev + 1)}
+            />
+
+            {/* Rename Playlist Modal */}
+            <Modal
+                visible={isRenameModalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsRenameModalVisible(false)}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
+                        <RNText style={[styles.modalTitle, { color: colors.text }]}>Rename Playlist</RNText>
+                        <TextInput
+                            style={[styles.modalInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.cardBorder }]}
+                            value={renamePlaylistName}
+                            onChangeText={setRenamePlaylistName}
+                            placeholder="Enter new name..."
+                            placeholderTextColor={colors.textSecondary}
+                            autoFocus
+                        />
+                        <View style={styles.modalButtons}>
+                            <Pressable
+                                onPress={() => setIsRenameModalVisible(false)}
+                                style={[styles.modalButton, { borderColor: colors.cardBorder, borderWidth: 1 }]}
+                            >
+                                <RNText style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</RNText>
+                            </Pressable>
+                            <Pressable
+                                onPress={handleRenamePlaylist}
+                                style={[styles.modalButton, { backgroundColor: colors.accent }]}
+                            >
+                                <RNText style={{ color: '#fff', fontWeight: '700' }}>Save</RNText>
+                            </Pressable>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -368,5 +498,11 @@ const styles = StyleSheet.create({
     },
     trackArtist: { fontSize: 12 },
     trackDuration: { fontSize: 12, marginRight: 8 },
-    trackMoreButton: { padding: 4 }
+    trackMoreButton: { padding: 4 },
+    modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center' },
+    modalContent: { width: screenWidth - 64, padding: 24, borderRadius: 16, borderWidth: 1, gap: 16 },
+    modalTitle: { fontSize: 18, fontWeight: '700' },
+    modalInput: { height: 48, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 15 },
+    modalButtons: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end', marginTop: 4 },
+    modalButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
 });
