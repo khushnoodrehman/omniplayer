@@ -2,7 +2,7 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { DownloadOptions, Track, usePlaybackStore } from '@/store/usePlaybackStore';
 import { BottomSheet, RNHostView } from '@expo/ui';
-import { Pressable, Text as RNText, StyleSheet, Switch, View } from 'react-native';
+import { Dimensions, Pressable, Text as RNText, StyleSheet, Switch, View } from 'react-native';
 
 interface DownloadSheetProps {
     isVisible: boolean;
@@ -12,6 +12,8 @@ interface DownloadSheetProps {
     tracksCount?: number;
     onStartDownload: (options: DownloadOptions) => void;
 }
+
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 export default function DownloadSheet({
     isVisible,
@@ -229,10 +231,11 @@ export default function DownloadSheet({
 
 const styles = StyleSheet.create({
     container: {
+        width: screenWidth,
+        height: screenHeight,
+        overflow: 'hidden',
         padding: 24,
-        paddingBottom: 40,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        paddingBottom: 20,
     },
     header: {
         marginBottom: 20,
