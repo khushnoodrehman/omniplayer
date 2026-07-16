@@ -16,18 +16,13 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
-    "production": {
-      "autoIncrement": true,
-      "android": {
-        "buildType": "apk",
-        "vclli": {
-          "splitPerAbi": true
-        }
-      }
-    }
+    "production": {}
   }
 }
