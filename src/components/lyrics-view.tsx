@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 
@@ -12,6 +12,7 @@ export default function LyricsView() {
     const lyrics = usePlaybackStore((state) => state.currentLyrics);
     const loading = usePlaybackStore((state) => state.isLyricsLoading);
     const error = usePlaybackStore((state) => state.lyricsError);
+    const seek = usePlaybackStore((state) => state.seek);
 
     const scrollViewRef = useRef<ScrollView>(null);
     const [activeIndex, setActiveIndex] = useState(-1);
@@ -72,17 +73,28 @@ export default function LyricsView() {
                 const isStatic = lyrics.length === 1 && lyric.time === 0;
 
                 return (
-                    <Text
+                    <Pressable
                         key={index}
-                        style={[
-                            styles.lyricLine,
-                            { color: isActive ? colors.text : colors.textSecondary },
-                            isActive && styles.activeLyric,
-                            isStatic && styles.staticLyric
+                        onPress={() => {
+                            if (!isStatic && lyric.time !== undefined) {
+                                seek(lyric.time);
+                            }
+                        }}
+                        style={({ pressed }) => [
+                            pressed && { opacity: 0.7 }
                         ]}
                     >
-                        {lyric.text || ' '}
-                    </Text>
+                        <Text
+                            style={[
+                                styles.lyricLine,
+                                { color: isActive ? colors.text : colors.textSecondary },
+                                isActive && styles.activeLyric,
+                                isStatic && styles.staticLyric
+                            ]}
+                        >
+                            {lyric.text || ' '}
+                        </Text>
+                    </Pressable>
                 );
             })}
         </ScrollView>

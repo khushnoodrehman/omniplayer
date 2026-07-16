@@ -6,7 +6,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
-import MiniPlayer from '@/components/mini-player';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
@@ -628,7 +627,6 @@ export default function HomeScreen() {
           <View style={{ height: 96 }} />
         </View>
       </ScrollView>
-      <MiniPlayer />
     </View>
   );
 }

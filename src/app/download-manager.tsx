@@ -7,7 +7,6 @@ import { Image } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, DownloadQueueItem } from '@/store/usePlaybackStore';
-import MiniPlayer from '@/components/mini-player';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -189,8 +188,6 @@ export default function DownloadManagerScreen() {
                     </View>
                 }
             />
-
-            <MiniPlayer />
         </View>
     );
 }

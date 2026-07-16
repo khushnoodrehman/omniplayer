@@ -8,7 +8,6 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { useLocalAudio } from '@/hooks/use-local-audio';
 import { getPlaylistsDB, deletePlaylistDB, renamePlaylistDB, createPlaylistDB } from '@/services/db';
-import MiniPlayer from '@/components/mini-player';
 import { extractLocalMetadata } from '@/services/metadata';
 import TrackOptionsSheet from '@/components/track-options-sheet';
 
@@ -569,7 +568,6 @@ export default function LibraryScreen() {
           color={colors.playIconColor}
         />
       </Pressable>
-      <MiniPlayer />
 
       {/* Create Playlist Modal */}
       <Modal

@@ -6,7 +6,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
-import MiniPlayer from '@/components/mini-player';
 import { getRecentSearchesDB, addRecentSearchDB, deleteRecentSearchDB, clearAllRecentSearchesDB } from '@/services/db';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 
@@ -574,7 +573,6 @@ export default function SearchScreen() {
           </View>
         </RNHostView>
       </BottomSheet>
-      <MiniPlayer />
     </View>
   );
 }

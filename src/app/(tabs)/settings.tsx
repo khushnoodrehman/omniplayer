@@ -3,7 +3,6 @@ import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, Al
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
-import MiniPlayer from '@/components/mini-player';
 import YTAuthModal from '@/components/yt-auth-modal'; // 🌟 Auth Modal Import
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -261,8 +260,6 @@ export default function SettingsScreen() {
           <View style={{ height: 96 }} />
         </View>
       </ScrollView>
-
-      <MiniPlayer />
 
       {/* 🌟 Auth Modal Mount */}
       <YTAuthModal

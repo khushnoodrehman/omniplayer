@@ -8,7 +8,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MiniPlayer from '@/components/mini-player';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -295,7 +294,6 @@ export default function ArtistScreen() {
                     </View>
                 )}
             </ScrollView>
-            <MiniPlayer />
         </View>
     );
 }

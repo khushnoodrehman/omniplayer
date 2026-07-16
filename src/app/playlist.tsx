@@ -8,7 +8,6 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { getPlaylistTracksDB, getPlaylistsDB, deletePlaylistDB, renamePlaylistDB } from '@/services/db';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MiniPlayer from '@/components/mini-player';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import TrackOptionsSheet from '@/components/track-options-sheet';
 
@@ -352,7 +351,6 @@ export default function PlaylistScreen() {
                     ))}
                 </View>
             </ScrollView>
-            <MiniPlayer />
 
             {/* Track Options Bottom Sheet */}
             <TrackOptionsSheet
