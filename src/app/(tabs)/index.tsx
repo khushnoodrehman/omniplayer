@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Pressable, Dimensions, Text as RNText, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, View, Pressable, Dimensions, Text as RNText, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,7 @@ import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -30,8 +31,35 @@ interface HomeShelf {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
-  const playTrack = usePlaybackStore((state) => state.playTrack);
   const router = useRouter();
+  const playTrack = usePlaybackStore((state) => state.playTrack);
+
+  const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
+  const [accountInfo, setAccountInfo] = useState<{ name: string; avatar: string } | null>(null);
+
+  // Scroll header animation variables
+  const lastOffset = useRef(0);
+  const headerTranslateY = useSharedValue(0);
+
+  const animatedHeaderStyle = useAnimatedStyle(() => {
+    const headerHeight = 48 + insets.top;
+    return {
+      transform: [{ translateY: headerTranslateY.value }],
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: headerHeight,
+      paddingTop: insets.top,
+      backgroundColor: colors.background,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.cardBorder,
+      zIndex: 10,
+    };
+  });
 
   // API States
   const [homeData, setHomeData] = useState({
@@ -51,6 +79,30 @@ export default function HomeScreen() {
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Profile details load
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!homeData.isLoggedIn) {
+        setAccountInfo(null);
+        return;
+      }
+      try {
+        const cached = await AsyncStorage.getItem('yt_account_info');
+        if (cached) {
+          setAccountInfo(JSON.parse(cached));
+        }
+        const live = await InnerTubeClient.getAccountInfo();
+        if (live) {
+          setAccountInfo(live);
+          await AsyncStorage.setItem('yt_account_info', JSON.stringify(live));
+        }
+      } catch (err) {
+        console.error("Failed to load profile details", err);
+      }
+    };
+    loadProfile();
+  }, [homeData.isLoggedIn]);
 
   // 🌟 REF TO PREVENT STALE CLOSURES IN FOCUS EFFECT
   const homeDataRef = useRef(homeData);
@@ -292,6 +344,27 @@ export default function HomeScreen() {
     }
   };
 
+  const handleScroll = (event: any) => {
+    const currentOffset = event.nativeEvent.contentOffset.y;
+    const direction = currentOffset > lastOffset.current ? 'down' : 'up';
+    const headerHeight = 48 + insets.top;
+
+    if (currentOffset <= 0) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    } else if (direction === 'down' && currentOffset > headerHeight && headerTranslateY.value === 0) {
+      headerTranslateY.value = withTiming(-headerHeight, { duration: 150 });
+    } else if (direction === 'up' && headerTranslateY.value === -headerHeight) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    }
+    lastOffset.current = currentOffset;
+
+    // Infinite scroll check
+    const isCloseToBottom = event.nativeEvent.layoutMeasurement.height + currentOffset >= event.nativeEvent.contentSize.height - 400;
+    if (isCloseToBottom) {
+      loadMoreShelves();
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
@@ -302,44 +375,40 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16), backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      
+      {/* Animated Header */}
+      <Animated.View style={animatedHeaderStyle}>
+        <RNText style={[styles.headerTitle, { color: colors.accent, fontWeight: '800' }]}>Omniplayer</RNText>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          onPress={() => setIsProfileModalVisible(true)}
+          style={({ pressed }) => [
+            styles.profileButton,
+            { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
+            pressed && styles.pressed
+          ]}
+        >
+          {accountInfo?.avatar ? (
+            <Image
+              source={{ uri: accountInfo.avatar }}
+              style={{ width: 34, height: 34, borderRadius: 17 }}
+              contentFit="cover"
+            />
+          ) : (
+            <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
+          )}
+        </Pressable>
+      </Animated.View>
+
       <ScrollView
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
         scrollEventThrottle={16}
-        onScroll={({ nativeEvent }) => {
-          const isCloseToBottom = nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >= nativeEvent.contentSize.height - 400;
-          if (isCloseToBottom) {
-            loadMoreShelves();
-          }
-        }}
+        onScroll={({ nativeEvent }) => handleScroll(nativeEvent)}
       >
         <View style={{ gap: 24 }}>
-
-          {/* Header: Greeting & Profile */}
-          <View style={[styles.header, { width: screenWidth - 32, marginHorizontal: 16 }]}>
-            <View style={{ gap: 2 }}>
-              <RNText style={[styles.headerTitle, { color: colors.text }]}>{greeting}</RNText>
-              {homeData.isLoggedIn && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#34c759' }} />
-                  <RNText style={{ fontSize: 12, color: colors.textSecondary }}>Personalized Feed</RNText>
-                </View>
-              )}
-            </View>
-            <View style={{ flex: 1 }} />
-            <Pressable
-              onPress={() => alert('Profile Details')}
-              style={({ pressed }) => [
-                styles.profileButton,
-                { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
-                pressed && styles.pressed
-              ]}
-            >
-              <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
-            </Pressable>
-          </View>
           {(() => {
             const speedDialShelf = homeData.shelves.find(s => {
               const t = (s?.title || '').toLowerCase();
@@ -627,6 +696,86 @@ export default function HomeScreen() {
           <View style={{ height: 96 }} />
         </View>
       </ScrollView>
+      {/* Profile Details Modal */}
+      <Modal
+        visible={isProfileModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsProfileModalVisible(false)}
+      >
+        <Pressable 
+          style={styles.modalBackdrop} 
+          onPress={() => setIsProfileModalVisible(false)}
+        >
+          <View 
+            style={[styles.modalContent, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+            onStartShouldSetResponder={() => true}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
+            <View style={{ alignItems: 'center', gap: 16, marginVertical: 16 }}>
+              {accountInfo?.avatar ? (
+                <Image 
+                  source={{ uri: accountInfo.avatar }} 
+                  style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: colors.cardBorder }} 
+                  contentFit="cover" 
+                />
+              ) : (
+                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.accentLight }]}>
+                  <AppIcon ios="person.crop.circle.fill" android="person-circle" size={80} color={colors.accent} />
+                </View>
+              )}
+              
+              <View style={{ alignItems: 'center', gap: 4 }}>
+                <RNText style={[styles.modalTitle, { color: colors.text, marginBottom: 0, textAlign: 'center' }]}>
+                  {accountInfo?.name || 'Connected User'}
+                </RNText>
+                <RNText style={{ fontSize: 13, color: colors.textSecondary }}>
+                  {homeData.isLoggedIn ? 'YouTube Music Connected' : 'Guest Account'}
+                </RNText>
+              </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+              {homeData.isLoggedIn ? (
+                <Pressable
+                  onPress={async () => {
+                    try {
+                      await AsyncStorage.removeItem('yt_cookies');
+                      await AsyncStorage.removeItem('yt_account_info');
+                      setAccountInfo(null);
+                      setHomeData(prev => ({ ...prev, isLoggedIn: false }));
+                      Alert.alert("Success", "Disconnected from YouTube Music.");
+                      setIsProfileModalVisible(false);
+                    } catch (err) {
+                      console.error("Disconnect Error:", err);
+                    }
+                  }}
+                  style={[styles.modalButton, { backgroundColor: '#ff3b30', flex: 1 }]}
+                >
+                  <RNText style={{ color: '#fff', fontWeight: '700' }}>Disconnect</RNText>
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    setIsProfileModalVisible(false);
+                    router.push('/settings');
+                  }}
+                  style={[styles.modalButton, { backgroundColor: colors.accent, flex: 1 }]}
+                >
+                  <RNText style={{ color: '#fff', fontWeight: '700' }}>Connect</RNText>
+                </Pressable>
+              )}
+
+              <Pressable
+                onPress={() => setIsProfileModalVisible(false)}
+                style={[styles.modalButton, { borderColor: colors.cardBorder, borderWidth: 1, flex: 1 }]}
+              >
+                <RNText style={{ color: colors.textSecondary, fontWeight: '600' }}>Close</RNText>
+              </Pressable>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -818,4 +967,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { width: screenWidth - 64, padding: 24, borderRadius: 16, borderWidth: 1, gap: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  modalButtons: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end', marginTop: 4 },
+  modalButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
 });

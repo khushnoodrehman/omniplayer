@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, Alert, Switch, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/use-theme';
@@ -6,6 +6,7 @@ import { AppIcon } from '@/components/ui/app-icon';
 import YTAuthModal from '@/components/yt-auth-modal'; // 🌟 Auth Modal Import
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -82,6 +83,30 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
 
+  // Scroll header animation variables
+  const lastOffset = useRef(0);
+  const headerTranslateY = useSharedValue(0);
+
+  const animatedHeaderStyle = useAnimatedStyle(() => {
+    const headerHeight = 48 + insets.top;
+    return {
+      transform: [{ translateY: headerTranslateY.value }],
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: headerHeight,
+      paddingTop: insets.top,
+      backgroundColor: colors.background,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.cardBorder,
+      zIndex: 10,
+    };
+  });
+
   // 🌟 Auth Modal States
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
   const [isYTConnected, setIsYTConnected] = useState(false);
@@ -150,28 +175,47 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleScroll = (event: any) => {
+    const currentOffset = event.nativeEvent.contentOffset.y;
+    const direction = currentOffset > lastOffset.current ? 'down' : 'up';
+    const headerHeight = 48 + insets.top;
+
+    if (currentOffset <= 0) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    } else if (direction === 'down' && currentOffset > headerHeight && headerTranslateY.value === 0) {
+      headerTranslateY.value = withTiming(-headerHeight, { duration: 150 });
+    } else if (direction === 'up' && headerTranslateY.value === -headerHeight) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    }
+    lastOffset.current = currentOffset;
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16), backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      
+      {/* Animated Header */}
+      <Animated.View style={animatedHeaderStyle}>
+        <RNText style={[styles.headerTitle, { color: colors.text }]}>Settings</RNText>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          onPress={() => alert('Profile Details')}
+          style={({ pressed }) => [
+            styles.profileButton,
+            { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
+            pressed && styles.pressed
+          ]}
+        >
+          <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
+        </Pressable>
+      </Animated.View>
+
       <ScrollView
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]}
         showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent }) => handleScroll(nativeEvent)}
+        scrollEventThrottle={16}
       >
         <View style={{ gap: 24 }}>
-          {/* Header */}
-          <View style={[styles.header, { width: screenWidth - 32, marginHorizontal: 16 }]}>
-            <RNText style={[styles.headerTitle, { color: colors.text }]}>Settings</RNText>
-            <View style={{ flex: 1 }} />
-            <Pressable
-              onPress={() => alert('Profile Details')}
-              style={({ pressed }) => [
-                styles.profileButton,
-                { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
-                pressed && styles.pressed
-              ]}
-            >
-              <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
-            </Pressable>
-          </View>
 
           {/* 🌟 NAYA SECTION: Account & Integrations */}
           <View style={{ gap: 12, paddingHorizontal: 16 }}>

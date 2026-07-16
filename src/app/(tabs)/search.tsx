@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Pressable, Dimensions, TextInput, Text as RNText, ScrollView, ActivityIndicator, Platform, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet, RNHostView } from '@expo/ui';
@@ -8,6 +8,10 @@ import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { getRecentSearchesDB, addRecentSearchDB, deleteRecentSearchDB, clearAllRecentSearchesDB } from '@/services/db';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import { useRouter } from 'expo-router';
+import TrackOptionsSheet from '@/components/track-options-sheet';
+import { useLocalAudio } from '@/hooks/use-local-audio';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 
 const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
@@ -171,8 +175,37 @@ export default function SearchScreen() {
   const playTrack = usePlaybackStore((state) => state.playTrack);
   const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
   const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
+  const router = useRouter();
+  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
 
   // UI States
+  const { audioFiles } = useLocalAudio();
+  const [searchMode, setSearchMode] = useState<'online' | 'local'>('online');
+
+  // Scroll header animation variables
+  const lastOffset = useRef(0);
+  const headerTranslateY = useSharedValue(0);
+
+  const animatedHeaderStyle = useAnimatedStyle(() => {
+    const headerHeight = 48 + insets.top;
+    return {
+      transform: [{ translateY: headerTranslateY.value }],
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: headerHeight,
+      paddingTop: insets.top,
+      backgroundColor: colors.background,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.cardBorder,
+      zIndex: 10,
+    };
+  });
   const [searchText, setSearchText] = useState('');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeChip, setActiveChip] = useState('All');
@@ -199,11 +232,22 @@ export default function SearchScreen() {
   const [displayedCount, setDisplayedCount] = useState(10);
 
 
-  const handleScroll = ({ nativeEvent }: any) => {
-    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-    // Jab user bottom se 300 pixels upar ho (yani roughly 9th item par ho)
-    const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 300;
+  const handleScroll = (event: any) => {
+    const currentOffset = event.contentOffset.y;
+    const direction = currentOffset > lastOffset.current ? 'down' : 'up';
+    const headerHeight = 48 + insets.top;
 
+    if (currentOffset <= 0) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    } else if (direction === 'down' && currentOffset > headerHeight && headerTranslateY.value === 0) {
+      headerTranslateY.value = withTiming(-headerHeight, { duration: 150 });
+    } else if (direction === 'up' && headerTranslateY.value === -headerHeight) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    }
+    lastOffset.current = currentOffset;
+
+    // Jab user bottom se 300 pixels upar ho
+    const isCloseToBottom = event.layoutMeasurement.height + currentOffset >= event.contentSize.height - 300;
     if (isCloseToBottom && displayedCount < apiResults.length) {
       setDisplayedCount((prev) => Math.min(prev + 10, apiResults.length)); // Agle 10 add karo
     }
@@ -219,18 +263,35 @@ export default function SearchScreen() {
     const delayDebounceFn = setTimeout(async () => {
       setIsFetching(true);
       try {
-        const results = await InnerTubeClient.search(trimmed);
-        setApiResults(results);
+        if (searchMode === 'online') {
+          const results = await InnerTubeClient.search(trimmed);
+          setApiResults(results);
+        } else {
+          const filtered = audioFiles.filter(track => {
+            const title = (track.filename || '').toLowerCase();
+            const q = trimmed.toLowerCase();
+            return title.includes(q);
+          }).map(track => ({
+            id: track.id,
+            title: track.filename.replace(/\.[^/.]+$/, ""),
+            artist: 'Local Audio',
+            image: track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+            duration: track.duration,
+            sourceType: 'local' as const,
+            uri: track.uri
+          }));
+          setApiResults(filtered);
+        }
         setDisplayedCount(10); // Nayi search par wapas 10 results se start karo
       } catch (error) {
         console.error("Search Error:", error);
       } finally {
         setIsFetching(false);
       }
-    }, 800);
+    }, searchMode === 'local' ? 50 : 800);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [searchText]);
+  }, [searchText, searchMode, audioFiles]);
 
   const greeting = (() => {
     const hours = new Date().getHours();
@@ -255,6 +316,22 @@ export default function SearchScreen() {
 
   // 2. Play YouTube Track Logic (Stream Extraction)
   const handlePlayYouTubeTrack = async (trackInfo: any) => {
+    if (trackInfo.sourceType === 'local') {
+      const queue: Track[] = apiResults
+        .filter(r => r !== null && r !== undefined)
+        .map(r => ({
+          id: r.id || '',
+          title: r.title || 'Unknown Song',
+          artist: r.artist || 'Unknown Artist',
+          image: r.image || '',
+          duration: r.duration || 0,
+          sourceType: 'local',
+          uri: r.uri || ''
+        }));
+      await playTrack(trackInfo, queue);
+      return;
+    }
+
     setLoadingTrackId(trackInfo.id);
     try {
       const data = await InnerTubeClient.getStreamUrl(trackInfo.id);
@@ -317,20 +394,24 @@ export default function SearchScreen() {
   const topResult = apiResults.length > 0 ? apiResults[0] : null; // Dynamic top result
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16), backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}>
-        <View style={{ gap: 24 }}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      
+      {/* Animated Header */}
+      <Animated.View style={animatedHeaderStyle}>
+        <RNText style={[styles.headerTitle, { color: colors.text }]}>Search</RNText>
+        <View style={{ flex: 1 }} />
+        <Pressable onPress={() => router.push('/settings')} style={({ pressed }) => [styles.profileButton, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && styles.pressed]}>
+          <AppIcon ios="person.crop.circle.fill" android="person-circle-outline" size={28} color={colors.accent} />
+        </Pressable>
+      </Animated.View>
 
-          {/* Header */}
-          <View style={[styles.header, { width: screenWidth - 32, marginHorizontal: 16 }]}>
-            <RNText style={[styles.headerTitle, { color: colors.text }]}>{greeting}</RNText>
-            <View style={{ flex: 1 }} />
-            <Pressable onPress={() => alert('Profile Details')} style={({ pressed }) => [styles.profileButton, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && styles.pressed]}>
-              <AppIcon ios="person.crop.circle.fill" android="person-circle-outline" size={28} color={colors.accent} />
-            </Pressable>
-          </View>
+      <ScrollView 
+        contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]} 
+        showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent }) => handleScroll(nativeEvent)}
+        scrollEventThrottle={16}
+      >
+        <View style={{ gap: 24 }}>
 
           {/* Search Input Bar */}
           <View style={[styles.searchContainer, { width: screenWidth - 32, marginHorizontal: 16 }]}>
@@ -338,14 +419,29 @@ export default function SearchScreen() {
               <AppIcon ios="magnifyingglass" android="search" size={20} color={colors.textSecondary} />
             </View>
             <TextInput
-              style={[styles.searchInput, { backgroundColor: colors.backgroundElement, color: colors.text }]}
-              placeholder="Search YouTube or Local Music..."
+              style={[styles.searchInput, { backgroundColor: colors.backgroundElement, color: colors.text, paddingRight: 48 }]}
+              placeholder={searchMode === 'online' ? "Search online YouTube Music..." : "Search local device storage..."}
               placeholderTextColor={colors.textSecondary}
               value={searchText}
               onChangeText={setSearchText}
               onSubmitEditing={handleSearchSubmit}
               returnKeyType="search"
             />
+            {/* Search Target Mode Toggle Button */}
+            <Pressable
+              onPress={() => setSearchMode(prev => prev === 'online' ? 'local' : 'online')}
+              style={({ pressed }) => [
+                { position: 'absolute', right: 16, zIndex: 11, padding: 4 },
+                pressed && { opacity: 0.7 }
+              ]}
+            >
+              <AppIcon 
+                ios={searchMode === 'online' ? 'globe' : 'smartphone'} 
+                android={searchMode === 'online' ? 'earth' : 'phone-portrait'} 
+                size={22} 
+                color={colors.accent} 
+              />
+            </Pressable>
           </View>
 
           {!isSearchingUI ? (
@@ -489,11 +585,13 @@ export default function SearchScreen() {
                     </View>
                   )}
 
-                  {/* YouTube Results Section */}
-                  {(activeChip === 'All' || activeChip === 'YouTube') && (
+                  {/* Results Section */}
+                  {(activeChip === 'All' || (searchMode === 'online' && activeChip === 'YouTube') || (searchMode === 'local' && activeChip === 'Local')) && (
                     <View style={{ paddingHorizontal: 16, gap: 12 }}>
                       <View style={styles.resultsSectionHeader}>
-                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>YouTube Global Search</RNText>
+                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>
+                          {searchMode === 'online' ? 'YouTube Global Search' : 'Local Device Audio'}
+                        </RNText>
                         <View style={styles.pulseDotWrapper}>
                           <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
                         </View>
@@ -503,9 +601,23 @@ export default function SearchScreen() {
                       <View style={{ gap: 8 }}>
                         {apiResults.length > 0 ? (
                           // Map API Data dynamically. Skip index 0 if it's already shown as top result in 'All'
-                          apiResults.slice(activeChip === 'All' ? 1 : 0, displayedCount).map((item, index) => {
+                          apiResults.slice(activeChip === 'All' && searchMode === 'online' ? 1 : 0, displayedCount).map((item, index) => {
                             if (!item) return null;
                             try {
+                              if (item.sourceType === 'local') {
+                                return (
+                                  <LocalAudioItem
+                                    key={`local-${index}-${item.id}`}
+                                    title={item.title}
+                                    subtitle={item.artist}
+                                    onPress={() => handlePlayYouTubeTrack(item)}
+                                    onOptionsPress={() => {
+                                      setSelectedTrack(item);
+                                      setIsTrackOptionsVisible(true);
+                                    }}
+                                  />
+                                );
+                              }
                               return (
                                 <YouTubeItem
                                   key={`yt-${index}-${safeString(item.id)}`}
@@ -545,34 +657,11 @@ export default function SearchScreen() {
         </View>
       </ScrollView>
 
-      {/* Native bottom sheet component from @expo/ui. 
-        Currently kept static for UI structure. 
-      */}
-      <BottomSheet isPresented={isBottomSheetVisible} onDismiss={() => setIsBottomSheetVisible(false)} snapPoints={['half']}>
-        <RNHostView matchContents>
-          <View style={[styles.bottomSheetContainer, { backgroundColor: colors.backgroundElement }]}>
-            <View style={styles.sheetHeaderRow}>
-              <View style={[styles.sheetAlbumArtContainer, { backgroundColor: colors.background }]}>
-                <Image source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBAc_vQxJeAkEpqG1JZLU46ViOlnbdkQKsjG2CMdbTAjahaX5_JwcF3N_gfIv9cQVZqUd8YsKoTZud8ZMUWPIUAsqZS09o5724LAws2ntdxxNJ3GjuSaqmW8Sz1XMvZXy9DFQMuVv_EAWLKTE4-9iIEqP2tDYMzM47BCGIlJzdia-9Vh8yyq9i9_OsKAh60Ptbb3VxS3ZHcQJf-ZYcOnQYuGis-ndskzA2adt_7vMMb8FKh3Zp1-x9n88cQBnIrcbut1uHPQ0wvUWm5' }} style={styles.sheetAlbumArt} resizeMode="cover" />
-              </View>
-              <View style={styles.sheetTextContainer}>
-                <RNText style={[styles.sheetSongTitle, { color: colors.text }]}>Options</RNText>
-                <RNText style={[styles.sheetSongArtist, { color: colors.textSecondary }]}>Artist</RNText>
-              </View>
-            </View>
-            <View style={[styles.sheetDivider, { backgroundColor: colors.divider }]} />
-            <View style={styles.sheetActionsList}>
-              <Pressable onPress={() => { alert('Will play next'); setIsBottomSheetVisible(false); }} style={styles.sheetActionRow}>
-                <AppIcon ios="rectangle.stack.badge.play" android="list" size={24} color={colors.accent} />
-                <RNText style={[styles.sheetActionText, { color: colors.text }]}>Play Next</RNText>
-              </Pressable>
-            </View>
-            <Pressable onPress={() => setIsBottomSheetVisible(false)} style={({ pressed }) => [styles.dismissButton, { backgroundColor: colors.dismissButtonBackground }, pressed && styles.pressed]}>
-              <RNText style={[styles.dismissButtonText, { color: colors.accent }]}>Dismiss</RNText>
-            </Pressable>
-          </View>
-        </RNHostView>
-      </BottomSheet>
+      <TrackOptionsSheet
+        isVisible={isTrackOptionsVisible}
+        onClose={() => setIsTrackOptionsVisible(false)}
+        track={selectedTrack}
+      />
     </View>
   );
 }

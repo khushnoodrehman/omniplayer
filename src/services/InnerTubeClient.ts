@@ -727,6 +727,51 @@ export class InnerTubeClient {
     }
 
     /**
+     * Fetch YouTube Music / Google profile information of the logged-in user
+     */
+    public static async getAccountInfo(): Promise<{ name: string; avatar: string } | null> {
+        try {
+            const cookies = await AsyncStorage.getItem('yt_cookies');
+            if (!cookies) return null;
+
+            // Fetch Home Feed using WEB_REMIX client to obtain the topbar metadata
+            const response = await this.postRequest('browse', {
+                browseId: 'FEmusic_home'
+            }, 'WEB_REMIX');
+
+            let name = 'Connected User';
+            let avatar = '';
+
+            const topbar = response.topbar || response.globalNavigation;
+            if (topbar) {
+                // Find account details inside topbar activeAccountHeaderRenderer
+                const accountRenderer = topbar.activeAccountHeaderRenderer || topbar.avatarHeaderRenderer;
+                if (accountRenderer) {
+                    name = accountRenderer.accountName?.runs?.[0]?.text || accountRenderer.displayName?.runs?.[0]?.text || name;
+                    const thumbs = accountRenderer.avatar?.thumbnails || [];
+                    if (thumbs.length > 0) {
+                        avatar = thumbs[thumbs.length - 1].url;
+                    }
+                } else {
+                    // Try alternative avatar locations
+                    const avatarRenderer = topbar.avatar || topbar.accountLinkButton?.avatar;
+                    if (avatarRenderer) {
+                        const thumbs = avatarRenderer.thumbnails || [];
+                        if (thumbs.length > 0) {
+                            avatar = thumbs[thumbs.length - 1].url;
+                        }
+                    }
+                }
+            }
+
+            return { name, avatar };
+        } catch (err) {
+            console.error('[InnerTubeClient] Error fetching account info:', err);
+            return { name: 'Connected User', avatar: '' };
+        }
+    }
+
+    /**
      * Fetch continuation shelves for Home Feed (Infinite Scroll)
      */
     public static async getHomeContinuation(continuationToken: string): Promise<{ shelves: any[], continuationToken: string | null }> {

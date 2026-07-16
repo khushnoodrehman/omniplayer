@@ -26,6 +26,7 @@ export default function PlaylistScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
 
     const playTrack = usePlaybackStore((state) => state.playTrack);
+    const setNowPlayingPlaylist = usePlaybackStore((state) => state.setNowPlayingPlaylist);
     const downloadPlaylist = usePlaybackStore((state) => state.downloadPlaylist);
 
     const [playlist, setPlaylist] = useState<any>(null);
@@ -105,12 +106,24 @@ export default function PlaylistScreen() {
 
     const handlePlayAll = () => {
         if (playlist && playlist.songs && playlist.songs.length > 0) {
+            setNowPlayingPlaylist({
+                id: playlist.id,
+                name: playlist.title,
+                image: playlist.image,
+                type: playlist.id.startsWith('pl_') ? 'local' : 'online'
+            });
             playTrack(playlist.songs[0], playlist.songs);
         }
     };
 
     const handleShufflePlay = () => {
         if (playlist && playlist.songs && playlist.songs.length > 0) {
+            setNowPlayingPlaylist({
+                id: playlist.id,
+                name: playlist.title,
+                image: playlist.image,
+                type: playlist.id.startsWith('pl_') ? 'local' : 'online'
+            });
             const shuffled = [...playlist.songs].sort(() => Math.random() - 0.5);
             playTrack(shuffled[0], shuffled);
         }
@@ -308,7 +321,15 @@ export default function PlaylistScreen() {
                     {playlist.songs && playlist.songs.map((track: any, index: number) => (
                         <Pressable
                             key={`${track.id}-${index}`}
-                            onPress={() => playTrack(track, playlist.songs)}
+                            onPress={() => {
+                                setNowPlayingPlaylist({
+                                    id: playlist.id,
+                                    name: playlist.title,
+                                    image: playlist.image,
+                                    type: playlist.id.startsWith('pl_') ? 'local' : 'online'
+                                });
+                                playTrack(track, playlist.songs);
+                            }}
                             style={({ pressed }) => [
                                 styles.trackItem,
                                 { backgroundColor: colors.backgroundElement },

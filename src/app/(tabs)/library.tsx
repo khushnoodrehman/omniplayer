@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -10,6 +10,9 @@ import { useLocalAudio } from '@/hooks/use-local-audio';
 import { getPlaylistsDB, deletePlaylistDB, renamePlaylistDB, createPlaylistDB } from '@/services/db';
 import { extractLocalMetadata } from '@/services/metadata';
 import TrackOptionsSheet from '@/components/track-options-sheet';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import { InnerTubeClient } from '@/services/InnerTubeClient';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -168,6 +171,75 @@ export default function LibraryScreen() {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
 
+  const nowPlayingPlaylist = usePlaybackStore((state) => state.nowPlayingPlaylist);
+  const [ytLikedPlaylist, setYtLikedPlaylist] = useState<any>(null);
+  const [isYTConnected, setIsYTConnected] = useState(false);
+
+  // Scroll header animation variables
+  const lastOffset = useRef(0);
+  const headerTranslateY = useSharedValue(0);
+
+  const animatedHeaderStyle = useAnimatedStyle(() => {
+    const headerHeight = 48 + insets.top;
+    return {
+      transform: [{ translateY: headerTranslateY.value }],
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: headerHeight,
+      paddingTop: insets.top,
+      backgroundColor: colors.background,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.cardBorder,
+      zIndex: 10,
+    };
+  });
+
+  // Check YT connection and load Liked Playlist
+  useEffect(() => {
+    let active = true;
+    const checkYTConnection = async () => {
+      try {
+        const cookies = await AsyncStorage.getItem('yt_cookies');
+        const connected = !!cookies;
+        if (active) setIsYTConnected(connected);
+        
+        if (connected) {
+          // 1. Load cached liked playlist metadata
+          const cached = await AsyncStorage.getItem('yt_liked_playlist');
+          if (cached && active) {
+            setYtLikedPlaylist(JSON.parse(cached));
+          }
+          // 2. Fetch live Liked Playlist details
+          const liveDetails = await InnerTubeClient.getPlaylistDetails('LM');
+          if (liveDetails && active) {
+            const parsedLiked = {
+              id: 'LM',
+              title: liveDetails.title || 'Liked Music',
+              image: liveDetails.image,
+              trackCount: liveDetails.songs?.length || liveDetails.trackCount || 0
+            };
+            setYtLikedPlaylist(parsedLiked);
+            await AsyncStorage.setItem('yt_liked_playlist', JSON.stringify(parsedLiked));
+          }
+        } else {
+          if (active) setYtLikedPlaylist(null);
+        }
+      } catch (err) {
+        console.error("[Library] Error loading liked playlist:", err);
+      }
+    };
+    
+    checkYTConnection();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const fetchPlaylists = async () => {
     try {
       const rows = await getPlaylistsDB();
@@ -274,49 +346,52 @@ export default function LibraryScreen() {
     uri: track.uri
   }));
 
+  const handleScroll = (event: any) => {
+    const currentOffset = event.nativeEvent.contentOffset.y;
+    const direction = currentOffset > lastOffset.current ? 'down' : 'up';
+    const headerHeight = 48 + insets.top;
+
+    if (currentOffset <= 0) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    } else if (direction === 'down' && currentOffset > headerHeight && headerTranslateY.value === 0) {
+      headerTranslateY.value = withTiming(-headerHeight, { duration: 150 });
+    } else if (direction === 'up' && headerTranslateY.value === -headerHeight) {
+      headerTranslateY.value = withTiming(0, { duration: 150 });
+    }
+    lastOffset.current = currentOffset;
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 16), backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      
+      {/* Animated Header */}
+      <Animated.View style={animatedHeaderStyle}>
+        <RNText style={[styles.headerTitle, { color: colors.text }]}>Your Library</RNText>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          onPress={() => router.push('/settings')}
+          style={({ pressed }) => [
+            styles.profileButton,
+            { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
+            pressed && styles.pressed
+          ]}
+        >
+          <AppIcon
+            ios="person.crop.circle.fill"
+            android="person-circle"
+            size={28}
+            color={colors.accent}
+          />
+        </Pressable>
+      </Animated.View>
+
       <ScrollView
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]}
         showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent }) => handleScroll(nativeEvent)}
+        scrollEventThrottle={16}
       >
         <View style={{ gap: 24 }}>
-          {/* Header */}
-          <View style={[styles.header, { width: screenWidth - 32, marginHorizontal: 16 }]}>
-            <RNText style={[styles.headerTitle, { color: colors.text }]}>Your Library</RNText>
-            <View style={{ flex: 1 }} />
-            <Pressable
-              onPress={() => alert('Profile Details')}
-              style={({ pressed }) => [
-                styles.profileButton,
-                { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
-                pressed && styles.pressed
-              ]}
-            >
-            <AppIcon
-              ios="person.crop.circle.fill"
-              android="person-circle"
-              size={28}
-              color={colors.accent}
-            />
-            </Pressable>
-          </View>
-
-          {/* Storage Indicator */}
-          <View style={{ paddingHorizontal: 16, gap: 8 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <RNText style={[styles.storageLabel, { color: colors.textSecondary }]}>
-                Omni Player Downloads - 1.2 GB Used
-              </RNText>
-              <RNText style={[styles.storageFree, { color: colors.accent }]}>
-                84% free
-              </RNText>
-            </View>
-            <View style={[styles.storageBarBg, { backgroundColor: colors.divider }]}>
-              <View style={[styles.storageBarFill, { backgroundColor: colors.accent, width: '16%' }]} />
-            </View>
-          </View>
-
           {/* Quick Access Row */}
           <View style={styles.quickAccessRow}>
             <Pressable
@@ -462,43 +537,108 @@ export default function LibraryScreen() {
                   </View>
                 </Pressable>
 
-                {localPlaylists.length === 0 ? (
+                {nowPlayingPlaylist || (isYTConnected && ytLikedPlaylist) || localPlaylists.length > 0 ? (
+                  <>
+                    {/* 🌟 NOW PLAYING PLAYLIST CARD */}
+                    {nowPlayingPlaylist && (
+                      <Pressable
+                        style={[
+                          styles.listItem, 
+                          { 
+                            backgroundColor: colors.backgroundElement, 
+                            borderColor: colors.accent, 
+                            borderWidth: 1.5 
+                          }
+                        ]}
+                        onPress={() => router.push(`/playlist?id=${nowPlayingPlaylist.id}`)}
+                      >
+                        {nowPlayingPlaylist.image ? (
+                          <Image source={{ uri: nowPlayingPlaylist.image }} style={styles.listItemArt} contentFit="cover" />
+                        ) : (
+                          <View style={[styles.folderIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
+                            <AppIcon ios="music.note.list" android="musical-notes-outline" size={22} color={colors.accent} />
+                          </View>
+                        )}
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <RNText style={[styles.listItemTitle, { color: colors.text, fontWeight: '700' }]} numberOfLines={1}>
+                              {nowPlayingPlaylist.name}
+                            </RNText>
+                            <View style={{ backgroundColor: colors.accent, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                              <RNText style={{ fontSize: 9, color: '#fff', fontWeight: 'bold' }}>NOW PLAYING</RNText>
+                            </View>
+                          </View>
+                          <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {nowPlayingPlaylist.type === 'online' ? 'YouTube Music Playlist' : 'Custom Playlist'}
+                          </RNText>
+                        </View>
+                        <AppIcon ios="play.fill" android="play" size={18} color={colors.accent} />
+                      </Pressable>
+                    )}
+
+                    {/* 🌟 YT LIKED PLAYLIST CARD */}
+                    {isYTConnected && ytLikedPlaylist && (
+                      <Pressable
+                        style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+                        onPress={() => router.push('/playlist?id=LM')}
+                      >
+                        {ytLikedPlaylist.image ? (
+                          <Image source={{ uri: ytLikedPlaylist.image }} style={styles.listItemArt} contentFit="cover" />
+                        ) : (
+                          <View style={[styles.folderIconWrapper, { backgroundColor: 'rgba(255, 45, 85, 0.12)' }]}>
+                            <AppIcon ios="heart.fill" android="heart" size={22} color="#ff2d55" />
+                          </View>
+                        )}
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <RNText style={[styles.listItemTitle, { color: colors.text, fontWeight: '700' }]} numberOfLines={1}>
+                            {ytLikedPlaylist.title}
+                          </RNText>
+                          <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                            YouTube Music Liked Songs • {ytLikedPlaylist.trackCount} songs
+                          </RNText>
+                        </View>
+                        <AppIcon ios="chevron.right" android="chevron-forward" size={18} color={colors.textSecondary} />
+                      </Pressable>
+                    )}
+
+                    {/* LOCAL PLAYLISTS */}
+                    {localPlaylists.map((playlist) => (
+                      <Pressable
+                        key={playlist.id}
+                        style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+                        onPress={() => router.push(`/playlist?id=${playlist.id}`)}
+                      >
+                        {playlist.image ? (
+                          <Image source={{ uri: playlist.image }} style={styles.listItemArt} contentFit="cover" />
+                        ) : (
+                          <View style={[styles.folderIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
+                            <AppIcon ios="music.note.list" android="musical-notes-outline" size={22} color={colors.accent} />
+                          </View>
+                        )}
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{playlist.name}</RNText>
+                          <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {playlist.id.startsWith('pl_') ? 'Custom Playlist' : 'Downloaded Playlist'}
+                          </RNText>
+                        </View>
+                        <Pressable 
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handlePlaylistOptions(playlist);
+                          }} 
+                          style={styles.moreButton}
+                        >
+                          <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                        </Pressable>
+                      </Pressable>
+                    ))}
+                  </>
+                ) : (
                   <View style={[styles.centerState, { borderColor: 'transparent' }]}>
                     <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]}>
                       No playlists created or downloaded yet.
                     </RNText>
                   </View>
-                ) : (
-                  localPlaylists.map((playlist) => (
-                    <Pressable
-                      key={playlist.id}
-                      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                      onPress={() => router.push(`/playlist?id=${playlist.id}`)}
-                    >
-                      {playlist.image ? (
-                        <Image source={{ uri: playlist.image }} style={styles.listItemArt} contentFit="cover" />
-                      ) : (
-                        <View style={[styles.folderIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
-                          <AppIcon ios="music.note.list" android="musical-notes-outline" size={22} color={colors.accent} />
-                        </View>
-                      )}
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{playlist.name}</RNText>
-                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                          {playlist.id.startsWith('pl_') ? 'Custom Playlist' : 'Downloaded Playlist'}
-                        </RNText>
-                      </View>
-                      <Pressable 
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handlePlaylistOptions(playlist);
-                        }} 
-                        style={styles.moreButton}
-                      >
-                        <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
-                      </Pressable>
-                    </Pressable>
-                  ))
                 )}
               </View>
             )}

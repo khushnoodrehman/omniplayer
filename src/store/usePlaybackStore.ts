@@ -80,6 +80,9 @@ interface PlaybackState {
     lyricsError: string | null;
     loadedLyricsTrackId: string | null;
 
+    nowPlayingPlaylist: { id: string; name: string; image?: string; type: 'online' | 'local' } | null;
+    setNowPlayingPlaylist: (playlist: { id: string; name: string; image?: string; type: 'online' | 'local' } | null) => void;
+
     playTrack: (track: Track, newQueue?: Track[]) => Promise<void>;
     playNext: () => Promise<void>;
     playPrevious: () => Promise<void>;
@@ -149,6 +152,20 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     exportSeparateLrcFile: true,
     lrcExportDirectoryUri: null,
 
+    nowPlayingPlaylist: null,
+    setNowPlayingPlaylist: (playlist) => {
+        set({ nowPlayingPlaylist: playlist });
+        if (playlist) {
+            AsyncStorage.setItem('now_playing_playlist', JSON.stringify(playlist)).catch(err => 
+                console.error('[PlaybackStore] Failed to save nowPlayingPlaylist:', err)
+            );
+        } else {
+            AsyncStorage.removeItem('now_playing_playlist').catch(err => 
+                console.error('[PlaybackStore] Failed to remove nowPlayingPlaylist:', err)
+            );
+        }
+    },
+
     setDownloadMode: (mode) => set({ downloadMode: mode }),
     setDownloadFormat: (format) => set({ downloadFormat: format }),
     setDownloadQuality: (quality) => set({ downloadQuality: quality }),
@@ -177,10 +194,13 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             const favs = await getFavoritesDB();
             const hist = await getHistoryDB();
             const cachedUri = await AsyncStorage.getItem('lrc_export_directory_uri');
+            const cachedNowPlaying = await AsyncStorage.getItem('now_playing_playlist');
+            const nowPlayingPlaylist = cachedNowPlaying ? JSON.parse(cachedNowPlaying) : null;
             set({
                 favoriteTracks: favs.map(f => f.id),
                 history: hist,
-                lrcExportDirectoryUri: cachedUri || null
+                lrcExportDirectoryUri: cachedUri || null,
+                nowPlayingPlaylist
             });
         } catch (error) {
             console.error("Error loading store data:", error);
