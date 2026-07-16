@@ -21,7 +21,16 @@ export default function MiniPlayer() {
     duration,
   } = usePlaybackStore();
 
-
+  const getCleanArtistName = (rawArtist: string) => {
+    if (!rawArtist) return '';
+    const parts = rawArtist.split('•').map(p => p.trim());
+    let clean = parts[0] || '';
+    if ((clean.toLowerCase() === 'song' || clean.toLowerCase() === 'video') && parts.length > 1) {
+      clean = parts[1];
+    }
+    return clean.replace(/\s*-\s*topic/gi, '').replace(/vevo$/gi, '').trim();
+  };
+  const displayArtist = getCleanArtistName(currentTrack?.artist || '');
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
@@ -65,7 +74,7 @@ export default function MiniPlayer() {
             {currentTrack ? currentTrack.title : 'Not Playing'}
           </RNText>
           <RNText style={[styles.miniPlayerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-            {currentTrack ? currentTrack.artist : 'Select a track to start'}
+            {currentTrack ? displayArtist : 'Select a track to start'}
           </RNText>
         </View>
 

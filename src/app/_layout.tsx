@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import TrackPlayer from '@rntp/player';
 import { Colors } from '@/constants/theme';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import NowPlayingBottomSheet from '@/components/now-playing-bottom-sheet';
+import NowPlayingModal from '@/components/now-playing-modal';
 
 import { initDB } from '@/services/db';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -70,7 +70,7 @@ export default function TabLayout() {
         <Stack.Screen name="artist" />
         <Stack.Screen name="download-manager" />
       </Stack>
-      <NowPlayingBottomSheet />
+      <NowPlayingModal />
     </ThemeProvider>
   );
 }

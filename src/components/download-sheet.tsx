@@ -1,9 +1,8 @@
-import React from 'react';
-import { View, Text as RNText, StyleSheet, Pressable, Dimensions, Switch } from 'react-native';
-import { BottomSheet, RNHostView } from '@expo/ui';
-import { useTheme } from '@/hooks/use-theme';
-import { usePlaybackStore, Track, DownloadOptions } from '@/store/usePlaybackStore';
 import { AppIcon } from '@/components/ui/app-icon';
+import { useTheme } from '@/hooks/use-theme';
+import { DownloadOptions, Track, usePlaybackStore } from '@/store/usePlaybackStore';
+import { BottomSheet, RNHostView } from '@expo/ui';
+import { Pressable, Text as RNText, StyleSheet, Switch, View } from 'react-native';
 
 interface DownloadSheetProps {
     isVisible: boolean;
@@ -62,12 +61,12 @@ export default function DownloadSheet({
         <BottomSheet
             isPresented={isVisible}
             onDismiss={onClose}
-            snapPoints={['full']}
+            snapPoints={[{ fraction: 0.25 }, 'half', { fraction: 0.9 }]}
             showDragIndicator={true}
         >
             <RNHostView matchContents>
                 <View style={[styles.container, { backgroundColor: colors.background }]}>
-                    
+
                     {/* Header */}
                     <View style={styles.header}>
                         <RNText style={[styles.title, { color: colors.text }]}>

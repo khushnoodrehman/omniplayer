@@ -1,36 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text as RNText,
-  Pressable,
-  Dimensions,
-  ScrollView,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BottomSheet, RNHostView } from '@expo/ui';
+import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
-import { AppIcon } from '@/components/ui/app-icon';
+import { BottomSheet, RNHostView } from '@expo/ui';
+import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  Pressable,
+  Text as RNText,
+  ScrollView,
+  StyleSheet,
+  useColorScheme,
+  View
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import * as FileSystem from 'expo-file-system/legacy';
-import LyricsView from '@/components/lyrics-view';
-import { addDownloadDB, getDownloadDB } from '@/services/db';
-import { InnerTubeClient } from '@/services/InnerTubeClient';
 import DownloadSheet from '@/components/download-sheet';
+import LyricsView from '@/components/lyrics-view';
 import TrackOptionsSheet from '@/components/track-options-sheet';
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+import { getDownloadDB } from '@/services/db';
+import { BlurView } from 'expo-blur';
+import * as FileSystem from 'expo-file-system/legacy';
 
-const SURFACE_CONTAINER_HIGH = '#292a2d';
-const BORDER_WHITE_5 = 'rgba(255,255,255,0.05)';
-const BORDER_WHITE_10 = 'rgba(255,255,255,0.10)';
-const ON_SURFACE_VARIANT = '#ccc3d3';
-const PRIMARY_CONTAINER = '#bd93f9';
-const ON_PRIMARY_CONTAINER = '#4e2484';
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const formatTime = (secs: number) => {
   const m = Math.floor(secs / 60);
@@ -61,19 +54,51 @@ export default function NowPlayingModal() {
     duration,
     downloadQueue,
     currentDownloadingTrackId,
-    currentDownloadProgress,
     downloadTrack,
+    currentLyrics,
   } = usePlaybackStore();
 
+  const [pageIndex, setPageIndex] = useState(0);
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
-  const [isLyricsExpanded, setIsLyricsExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'lyrics' | 'queue'>('lyrics');
+  const handleScroll = (e: any) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const page = Math.round(offsetX / screenWidth);
+    if (page !== pageIndex) {
+      setPageIndex(page);
+    }
+  };
 
-  // 🌟 NAYI STATES: Download Status aur Progress ke liye
+  const getActiveLyricLine = () => {
+    if (!currentLyrics || currentLyrics.length === 0 || position === undefined) return '';
+    let activeLine = '';
+    for (let i = 0; i < currentLyrics.length; i++) {
+      if (position >= currentLyrics[i].time) {
+        activeLine = currentLyrics[i].text;
+      } else {
+        break;
+      }
+    }
+    return activeLine;
+  };
+  const activeLyricText = getActiveLyricLine();
+
+  const getCleanArtistName = (rawArtist: string) => {
+    if (!rawArtist) return '';
+    const parts = rawArtist.split('•').map(p => p.trim());
+    let clean = parts[0] || '';
+    if ((clean.toLowerCase() === 'song' || clean.toLowerCase() === 'video') && parts.length > 1) {
+      clean = parts[1];
+    }
+    return clean.replace(/\s*-\s*topic/gi, '').replace(/vevo$/gi, '').trim();
+  };
+  const displayArtist = getCleanArtistName(currentTrack?.artist || '');
+
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'downloading' | 'downloaded'>('idle');
   const [isDownloadSheetVisible, setIsDownloadSheetVisible] = useState(false);
   const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
-  const [seekBarWidth, setSeekBarWidth] = useState(screenWidth - 32);
+  const [seekBarWidth, setSeekBarWidth] = useState(screenWidth - 82);
 
   useEffect(() => {
     let active = true;
@@ -110,22 +135,18 @@ export default function NowPlayingModal() {
     seek(clickRatio * duration);
   };
 
-  // Compute active download status based on DB check and Queue state
   const isEnqueued = downloadQueue.some(item => item.track.id === currentTrack.id);
   const isDownloading = currentDownloadingTrackId === currentTrack.id;
-  
-  const activeDownloadStatus = downloadStatus === 'downloaded' 
-    ? 'downloaded' 
-    : (isDownloading ? 'downloading' : (isEnqueued ? 'enqueued' : 'idle'));
 
-  const artGlowColor = colors.accent.replace(')', ', 0.30)').replace('rgb(', 'rgba(') ?? 'rgba(215,186,255,0.30)';
+  const activeDownloadStatus = downloadStatus === 'downloaded'
+    ? 'downloaded'
+    : (isDownloading ? 'downloading' : (isEnqueued ? 'enqueued' : 'idle'));
 
   return (
     <BottomSheet
       isPresented={isPlayerVisible}
       onDismiss={() => {
         setPlayerVisible(false);
-        setIsLyricsExpanded(false);
       }}
       snapPoints={['full']}
       showDragIndicator={true}
@@ -133,27 +154,14 @@ export default function NowPlayingModal() {
       <RNHostView matchContents>
         <View style={[styles.root, { backgroundColor: colors.background }]}>
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            <LinearGradient
-              colors={[
-                'rgba(215,186,255,0.28)',
-                'rgba(215,186,255,0.10)',
-                'rgba(0,0,0,0)',
-              ]}
-              locations={[0, 0.35, 0.75]}
-              style={StyleSheet.absoluteFill}
+            <Image
+              source={{ uri: currentTrack.image }}
+              style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
+              contentFit="cover"
+              blurRadius={70}
             />
-            <LinearGradient
-              colors={['rgba(189,147,249,0.18)', 'rgba(0,0,0,0)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            <LinearGradient
-              colors={['rgba(0,0,0,0)', `rgba(0,218,243,0.06)`]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
+            <BlurView intensity={100} style={StyleSheet.absoluteFill} tint={isDark ? "dark" : "light"} />
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.3)' }} />
           </View>
 
           <View
@@ -161,30 +169,29 @@ export default function NowPlayingModal() {
               styles.mainCanvas,
               {
                 paddingTop: 8,
-                paddingBottom: Math.max(insets.bottom, 16),
+                paddingBottom: Math.max(insets.bottom, 24),
               },
             ]}
           >
+            {/* Top Bar */}
             <View style={styles.header}>
               <View style={styles.headerRow}>
-                <View
-                  style={[
-                    styles.sourceBadge,
-                    {
-                      backgroundColor: `${SURFACE_CONTAINER_HIGH}66`,
-                      borderColor: BORDER_WHITE_5,
-                    },
-                  ]}
+                <Pressable
+                  onPress={() => setPlayerVisible(false)}
+                  style={styles.headerMenuButton}
                 >
                   <AppIcon
-                    ios="folder.fill"
-                    android="folder-open-outline"
-                    size={16}
-                    color={colors.accent}
+                    ios="chevron.down"
+                    android="chevron-down"
+                    size={24}
+                    color="#ffffff"
                   />
-                  <RNText style={[styles.sourceBadgeText, { color: ON_SURFACE_VARIANT }]}>
-                    {currentTrack.sourceType === 'local' ? 'Playing from Local' : 'Playing from YouTube'}
-                  </RNText>
+                </Pressable>
+
+                {/* Pager indicators (dots) */}
+                <View style={styles.topIndicatorRow}>
+                  <View style={[styles.indicatorDot, { backgroundColor: '#ffffff', opacity: pageIndex === 0 ? 1 : 0.3 }]} />
+                  <View style={[styles.indicatorDot, { backgroundColor: '#ffffff', opacity: pageIndex === 1 ? 1 : 0.3 }]} />
                 </View>
 
                 <Pressable
@@ -195,322 +202,164 @@ export default function NowPlayingModal() {
                     ios="ellipsis"
                     android="ellipsis-vertical"
                     size={22}
-                    color={colors.text}
+                    color="#ffffff"
                   />
                 </Pressable>
               </View>
             </View>
 
-            <View style={styles.artSection}>
-              <View style={styles.artCardContainer}>
-                <View
-                  style={[
-                    styles.artGlow,
-                    { backgroundColor: artGlowColor },
-                  ]}
-                />
-                <Image
-                  source={{ uri: currentTrack.image }}
-                  style={[styles.albumArt, { borderColor: BORDER_WHITE_10 }]}
-                  contentFit="cover"
-                />
-              </View>
-            </View>
-
-            <View style={styles.infoSection}>
-              <View style={styles.infoRow}>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <RNText style={[styles.trackTitle, { color: colors.text }]} numberOfLines={1}>
-                    {currentTrack.title}
-                  </RNText>
-                  <RNText style={[styles.trackArtist, { color: colors.accent }]} numberOfLines={1}>
-                    {currentTrack.artist}
-                  </RNText>
-                </View>
-
-                <View style={styles.actionButtons}>
-                  <Pressable
-                    onPress={() => toggleFavorite(currentTrack)}
-                    style={styles.iconButton}
-                  >
-                    <AppIcon
-                      ios={isFavorited ? 'heart.fill' : 'heart'}
-                      android={isFavorited ? 'heart' : 'heart-outline'}
-                      size={22}
-                      color={isFavorited ? colors.pulseDot : ON_SURFACE_VARIANT}
-                    />
-                  </Pressable>
-
-                  {/* Download Options Sheet trigger */}
-                  <Pressable
-                    onPress={() => {
-                      if (activeDownloadStatus === 'idle' || activeDownloadStatus === 'downloaded') {
-                        setIsDownloadSheetVisible(true);
-                      }
-                    }}
-                    style={styles.iconButton}
-                  >
-                    {activeDownloadStatus === 'idle' && (
-                      <AppIcon
-                        ios="arrow.down.to.line"
-                        android="download-outline"
-                        size={22}
-                        color={ON_SURFACE_VARIANT}
+            {/* 🌟 SWIPEABLE PAGER */}
+            <View style={styles.pagerContainer}>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                style={styles.scrollViewPager}
+              >
+                {/* Page 1: Album Art & Metadata */}
+                <View style={[styles.pagerPage, { width: screenWidth }]}>
+                  <View style={styles.artSection}>
+                    <View style={styles.artCardContainer}>
+                      <Image
+                        source={{ uri: currentTrack.image }}
+                        style={[styles.albumArt, { borderColor: 'rgba(255,255,255,0.1)' }]}
+                        contentFit="cover"
                       />
-                    )}
-                    {activeDownloadStatus === 'enqueued' && (
-                      <AppIcon
-                        ios="clock"
-                        android="time-outline"
-                        size={22}
-                        color={colors.accent}
-                      />
-                    )}
-                    {activeDownloadStatus === 'downloading' && (
-                      <View style={styles.progressContainer}>
-                        <ActivityIndicator size="small" color={colors.accent} />
-                        <RNText style={[styles.progressText, { color: colors.accent }]}>
-                          {Math.round(currentDownloadProgress * 100)}%
+                    </View>
+                  </View>
+
+                  <View style={styles.metadataContainer}>
+                    <View style={styles.infoRow}>
+                      <View style={{ flex: 1 }}>
+                        <RNText style={[styles.trackTitle, { color: '#ffffff' }]} numberOfLines={1}>
+                          {currentTrack.title}
+                        </RNText>
+                        <RNText style={[styles.trackArtist, { color: 'rgba(255,255,255,0.7)' }]} numberOfLines={1}>
+                          {displayArtist}
                         </RNText>
                       </View>
-                    )}
-                    {activeDownloadStatus === 'downloaded' && (
-                      <AppIcon
-                        ios="checkmark.circle.fill"
-                        android="checkmark-circle"
-                        size={22}
-                        color={colors.accent}
-                      />
-                    )}
-                  </Pressable>
+                      <Pressable
+                        onPress={() => toggleFavorite(currentTrack)}
+                        style={styles.iconButton}
+                      >
+                        <AppIcon
+                          ios={isFavorited ? 'heart.fill' : 'heart'}
+                          android={isFavorited ? 'heart' : 'heart-outline'}
+                          size={24}
+                          color={isFavorited ? colors.pulseDot : 'rgba(255,255,255,0.6)'}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <RNText style={styles.activeLyricLineText} numberOfLines={1}>
+                      {activeLyricText ? `(${activeLyricText})` : ' '}
+                    </RNText>
+
+                    <View style={styles.actionRow}>
+                      <Pressable
+                        onPress={() => {
+                          if (activeDownloadStatus === 'idle' || activeDownloadStatus === 'downloaded') {
+                            setIsDownloadSheetVisible(true);
+                          }
+                        }}
+                        style={styles.actionIconButton}
+                      >
+                        {activeDownloadStatus === 'idle' && (
+                          <AppIcon ios="arrow.down.to.line" android="download-outline" size={22} color="rgba(255,255,255,0.6)" />
+                        )}
+                        {activeDownloadStatus === 'enqueued' && (
+                          <AppIcon ios="clock" android="time-outline" size={22} color={colors.accent} />
+                        )}
+                        {activeDownloadStatus === 'downloading' && (
+                          <ActivityIndicator size="small" color={colors.accent} />
+                        )}
+                        {activeDownloadStatus === 'downloaded' && (
+                          <AppIcon ios="checkmark.circle.fill" android="checkmark-circle" size={22} color={colors.accent} />
+                        )}
+                      </Pressable>
+
+                      <View style={styles.sourceBadgeInline}>
+                        <AppIcon
+                          ios="folder.fill"
+                          android="folder-open-outline"
+                          size={12}
+                          color="rgba(255,255,255,0.5)"
+                        />
+                        <RNText style={styles.sourceBadgeInlineText}>
+                          {currentTrack.sourceType === 'local' ? 'Local' : 'YouTube'}
+                        </RNText>
+                      </View>
+
+                      <Pressable
+                        onPress={() => setIsTrackOptionsVisible(true)}
+                        style={styles.actionIconButton}
+                      >
+                        <AppIcon ios="ellipsis" android="ellipsis-vertical" size={22} color="rgba(255,255,255,0.6)" />
+                      </Pressable>
+                    </View>
+                  </View>
                 </View>
-              </View>
+
+                {/* Page 2: Lyrics */}
+                <View style={[styles.pagerPage, { width: screenWidth }]}>
+                  <View style={styles.lyricsPageHeader}>
+                    <RNText style={styles.lyricsPageTitle} numberOfLines={1}>
+                      {currentTrack.title}
+                    </RNText>
+                    <RNText style={styles.lyricsPageArtist} numberOfLines={1}>
+                      {displayArtist}
+                    </RNText>
+                    <RNText style={styles.lyricsPageActiveLyric} numberOfLines={1}>
+                      {activeLyricText ? `(${activeLyricText})` : ' '}
+                    </RNText>
+                  </View>
+                  <View style={{ flex: 1, width: '100%' }}>
+                    <LyricsView />
+                  </View>
+                </View>
+              </ScrollView>
             </View>
 
-            <View style={styles.controlsSection}>
-              <Pressable
-                onPress={handleSeekBarPress}
-                onLayout={(e) => setSeekBarWidth(e.nativeEvent.layout.width)}
-                style={styles.seekbarContainer}
-              >
-                <View style={[styles.seekbarBg, { backgroundColor: 'rgba(204,195,211,0.20)' }]} pointerEvents="none">
-                  <View
-                    style={[
-                      styles.seekbarFill,
-                      { backgroundColor: colors.accent, width: `${progressPercentage}%` },
-                    ]}
-                  />
-                </View>
-              </Pressable>
-
-              <View style={styles.timestampsRow}>
-                <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
-                  {formatTime(position)}
-                </RNText>
-                <RNText style={[styles.timestampText, { color: ON_SURFACE_VARIANT }]}>
-                  {formatTime(duration)}
-                </RNText>
+            {/* STATIC BOTTOM SECTION */}
+            <View style={styles.bottomSection}>
+              <View style={styles.seekbarRow}>
+                <RNText style={styles.timestampTextHuawei}>{formatTime(position)}</RNText>
+                <Pressable
+                  onPress={handleSeekBarPress}
+                  onLayout={(e) => setSeekBarWidth(e.nativeEvent.layout.width)}
+                  style={styles.seekbarContainerInline}
+                >
+                  <View style={[styles.seekbarBg, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+                    <View style={[styles.seekbarFill, { backgroundColor: '#ffffff', width: `${progressPercentage}%` }]} />
+                  </View>
+                </Pressable>
+                <RNText style={styles.timestampTextHuawei}>{formatTime(duration)}</RNText>
               </View>
 
               <View style={styles.buttonRow}>
                 <Pressable onPress={toggleShuffle}>
-                  <AppIcon
-                    ios="shuffle"
-                    android="shuffle"
-                    size={22}
-                    color={isShuffle ? colors.accent : ON_SURFACE_VARIANT}
-                  />
+                  <AppIcon ios="shuffle" android="shuffle" size={22} color={isShuffle ? colors.accent : 'rgba(255,255,255,0.6)'} />
                 </Pressable>
-
-                 <Pressable onPress={() => {
-                  console.log(`[NowPlayingModal] 'Previous' button clicked at timestamp ${Date.now()}`);
-                  playPrevious();
-                }}>
-                  <AppIcon
-                    ios="backward.fill"
-                    android="play-back"
-                    size={34}
-                    color={colors.text}
-                  />
+                <Pressable onPress={() => playPrevious()}>
+                  <AppIcon ios="backward.fill" android="play-back" size={30} color="#ffffff" />
                 </Pressable>
-
                 <Pressable
                   onPress={togglePlay}
-                  style={[
-                    styles.playPauseFAB,
-                    {
-                      backgroundColor: PRIMARY_CONTAINER,
-                      ...Platform.select({
-                        ios: {
-                          shadowColor: PRIMARY_CONTAINER,
-                          shadowOffset: { width: 0, height: 4 },
-                          shadowOpacity: 0.45,
-                          shadowRadius: 12,
-                        },
-                        android: { elevation: 10 },
-                      }),
-                    },
-                  ]}
+                  style={[styles.playPauseButtonHuawei, { backgroundColor: '#ffffff' }]}
                 >
-                  <AppIcon
-                    ios={isPlaying ? 'pause.fill' : 'play.fill'}
-                    android={isPlaying ? 'pause' : 'play'}
-                    size={42}
-                    color={ON_PRIMARY_CONTAINER}
-                  />
+                  <AppIcon ios={isPlaying ? 'pause.fill' : 'play.fill'} android={isPlaying ? 'pause' : 'play'} size={36} color="#1e2023" />
                 </Pressable>
-
-                <Pressable onPress={() => {
-                  console.log(`[NowPlayingModal] 'Next' button clicked at timestamp ${Date.now()}`);
-                  playNext();
-                }}>
-                  <AppIcon
-                    ios="forward.fill"
-                    android="play-forward"
-                    size={34}
-                    color={colors.text}
-                  />
+                <Pressable onPress={() => playNext()}>
+                  <AppIcon ios="forward.fill" android="play-forward" size={30} color="#ffffff" />
                 </Pressable>
-
                 <Pressable onPress={toggleRepeat}>
-                  <AppIcon
-                    ios="repeat"
-                    android="repeat"
-                    size={22}
-                    color={isRepeat ? colors.accent : ON_SURFACE_VARIANT}
-                  />
+                  <AppIcon ios="repeat" android="repeat" size={22} color={isRepeat ? colors.accent : 'rgba(255,255,255,0.6)'} />
                 </Pressable>
               </View>
             </View>
-
-            <View style={{ flex: 1 }} />
-
-            <Pressable
-              style={styles.lyricsPeekContainer}
-              onPress={() => setIsLyricsExpanded(true)}
-            >
-              <View style={styles.lyricsPeekGlass} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <AppIcon
-                  ios="quote.bubble"
-                  android="chatbubble-ellipses-outline"
-                  size={18}
-                  color={colors.accent}
-                />
-                <RNText
-                  style={[styles.lyricsPeekText, { color: colors.text }]}
-                  numberOfLines={1}
-                >
-                  Tap to view live lyrics
-                </RNText>
-              </View>
-              <AppIcon
-                ios="chevron.up"
-                android="chevron-up"
-                size={18}
-                color={ON_SURFACE_VARIANT}
-              />
-            </Pressable>
           </View>
-
-          {isLyricsExpanded && (
-            <View
-              style={[
-                styles.expandedDrawer,
-                { paddingTop: Math.max(insets.top, 16) },
-              ]}
-            >
-              <View style={styles.expandedDrawerGlass} />
-
-              <View style={styles.expandedDrawerHeader}>
-                <View style={styles.expandedDrawerHandle} />
-                <View style={styles.expandedHeaderRow}>
-                  <View style={{ flexDirection: 'row', gap: 24 }}>
-                    <Pressable onPress={() => setActiveTab('lyrics')}>
-                      <RNText
-                        style={[
-                          styles.drawerTabButton,
-                          { color: activeTab === 'lyrics' ? colors.accent : ON_SURFACE_VARIANT },
-                          activeTab === 'lyrics' && {
-                            borderBottomColor: colors.accent,
-                            borderBottomWidth: 2,
-                          },
-                        ]}
-                      >
-                        Lyrics
-                      </RNText>
-                    </Pressable>
-                    <Pressable onPress={() => setActiveTab('queue')}>
-                      <RNText
-                        style={[
-                          styles.drawerTabButton,
-                          { color: activeTab === 'queue' ? colors.accent : ON_SURFACE_VARIANT },
-                          activeTab === 'queue' && {
-                            borderBottomColor: colors.accent,
-                            borderBottomWidth: 2,
-                          },
-                        ]}
-                      >
-                        Up Next
-                      </RNText>
-                    </Pressable>
-                  </View>
-                  <Pressable
-                    onPress={() => setIsLyricsExpanded(false)}
-                    style={styles.drawerCloseBtn}
-                  >
-                    <AppIcon
-                      ios="chevron.down"
-                      android="chevron-down"
-                      size={24}
-                      color={colors.text}
-                    />
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                {activeTab === 'lyrics' ? (
-                  <LyricsView />
-                ) : (
-                  <ScrollView
-                    contentContainerStyle={{ padding: 24, paddingBottom: 64 }}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    <View style={{ gap: 16 }}>
-                      <RNText style={[styles.lyricTitle, { color: ON_SURFACE_VARIANT }]}>QUEUE</RNText>
-                      <View
-                        style={[
-                          styles.queueItem,
-                          { backgroundColor: `${SURFACE_CONTAINER_HIGH}99`, borderColor: BORDER_WHITE_10 },
-                        ]}
-                      >
-                        <Image
-                          source={{ uri: currentTrack.image }}
-                          style={styles.queueItemArt}
-                          contentFit="cover"
-                        />
-                        <View style={{ flex: 1 }}>
-                          <RNText style={[styles.queueItemTitle, { color: colors.text }]} numberOfLines={1}>
-                            {currentTrack.title} (Now Playing)
-                          </RNText>
-                          <RNText style={[styles.queueItemArtist, { color: ON_SURFACE_VARIANT }]} numberOfLines={1}>
-                            {currentTrack.artist}
-                          </RNText>
-                        </View>
-                      </View>
-
-                      <RNText style={[styles.queueUpcomingLabel, { color: colors.accent, marginTop: 12 }]}>
-                        Next Songs
-                      </RNText>
-
-                    </View>
-                  </ScrollView>
-                )}
-              </View>
-            </View>
-          )}
-
         </View>
       </RNHostView>
       <DownloadSheet
@@ -538,10 +387,11 @@ const styles = StyleSheet.create({
   },
   mainCanvas: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 0, // 🌟 FIX: Removed horizontal padding here to allow full width swiping
   },
   header: {
-    marginBottom: 12,
+    marginBottom: 8,
+    paddingHorizontal: 16, // 🌟 Added here instead
   },
   headerRow: {
     flexDirection: 'row',
@@ -550,26 +400,22 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 48,
   },
-  sourceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  sourceBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
   headerMenuButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  topIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  indicatorDot: {
+    height: 6,
+    width: 6,
+    borderRadius: 3,
   },
   artSection: {
     alignItems: 'center',
@@ -578,53 +424,38 @@ const styles = StyleSheet.create({
   },
   artCardContainer: {
     position: 'relative',
-    width: Math.min(screenWidth - 64, 280),
-    height: Math.min(screenWidth - 64, 280),
+    width: Math.min(screenWidth - 80, 280),
+    height: Math.min(screenWidth - 80, 280),
+    aspectRatio: 1,
+    flexShrink: 0,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  artGlow: {
-    position: 'absolute',
-    width: '80%',
-    height: '80%',
-    borderRadius: 24,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#d7baff',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.7,
-        shadowRadius: 40,
-      },
-      android: { elevation: 18 },
-    }),
   },
   albumArt: {
     width: '100%',
     height: '100%',
-    borderRadius: 24,
+    borderRadius: 16,
     borderWidth: 1,
   },
-  infoSection: {
-    marginBottom: 12,
+  metadataContainer: {
+    width: '100%',
+    paddingHorizontal: 24,
+    marginTop: 8,
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     width: '100%',
   },
   trackTitle: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '700',
     letterSpacing: -0.5,
   },
   trackArtist: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 0,
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 2,
   },
   iconButton: {
     width: 44,
@@ -633,174 +464,128 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  progressContainer: {
-    justifyContent: 'center',
+  activeLyricLineText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    fontStyle: 'italic',
+    textAlign: 'left',
+    marginVertical: 12,
+    minHeight: 20,
+  },
+  actionRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 8,
+  },
+  actionIconButton: {
     width: 44,
     height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  progressText: {
-    fontSize: 9,
+  sourceBadgeInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  sourceBadgeInlineText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '600',
+  },
+  lyricsPageHeader: {
+    alignItems: 'center',
+    gap: 2,
+    marginBottom: 12,
+    paddingHorizontal: 24,
+    width: '100%',
+  },
+  lyricsPageTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    marginTop: 2,
+    color: '#ffffff',
+    textAlign: 'center', // 🌟 FIX: Centered
   },
-  controlsSection: {
-    width: '100%',
+  lyricsPageArtist: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '500',
+    textAlign: 'center', // 🌟 FIX: Centered
   },
-  seekbarContainer: {
+  lyricsPageActiveLyric: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    fontStyle: 'italic',
+    marginTop: 4,
+    fontWeight: '600',
+    textAlign: 'center', // 🌟 FIX: Centered
+  },
+  pagerContainer: {
+    flex: 1,
+    width: '100%', // 🌟 FIX: width 'auto' ko 100% kiya
+    justifyContent: 'center',
+  },
+  scrollViewPager: {
+    flex: 1,
+    width: '100%', // 🌟 FIX: Guaranteed full width
+  },
+  pagerPage: {
+    height: '100%',
+    width: screenWidth, // 🌟 FIX: Exact screen width
+    justifyContent: 'center',
+    alignItems: 'center', // Keeps content in center
+  },
+  bottomSection: {
     width: '100%',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 24,
+  },
+  seekbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 12,
+  },
+  seekbarContainerInline: {
+    flex: 1,
     paddingVertical: 12,
   },
   seekbarBg: {
-    height: 6,
-    borderRadius: 3,
+    height: 4,
+    borderRadius: 2,
     width: '100%',
     overflow: 'hidden',
   },
   seekbarFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 2,
   },
-  timestampsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: -4,
-    marginBottom: 24,
-  },
-  timestampText: {
+  timestampTextHuawei: {
     fontSize: 11,
     fontWeight: '500',
     letterSpacing: 0.4,
+    minWidth: 32,
+    textAlign: 'center',
   },
   buttonRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'space-evenly',
     width: '100%',
-    paddingHorizontal: 4,
+    marginBottom: 36, // 🌟 FIX: 50 hata kar normal margin set kiya (insets handle kar raha hai oopar)
   },
-  playPauseFAB: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+  playPauseButtonHuawei: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  lyricsPeekContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderTopColor: BORDER_WHITE_10,
-    overflow: 'hidden',
-    marginHorizontal: -16,
-  },
-  lyricsPeekGlass: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(30,32,35,0.65)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-  lyricsPeekText: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    fontWeight: '500',
-    flex: 1,
-    opacity: 0.85,
-  },
-  expandedDrawer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: screenHeight * 0.85,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    overflow: 'hidden',
-    zIndex: 200,
-  },
-  expandedDrawerGlass: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(18,19,22,0.92)',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-  },
-  expandedDrawerHeader: {
-    alignItems: 'center',
-    paddingTop: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_WHITE_10,
-  },
-  expandedDrawerHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    marginBottom: 8,
-  },
-  expandedHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    paddingHorizontal: 24,
-    height: 52,
-  },
-  drawerTabButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    paddingBottom: 8,
-  },
-  drawerCloseBtn: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  lyricTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    opacity: 0.5,
-  },
-  queueItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 12,
-  },
-  queueItemArt: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
-  },
-  queueItemTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  queueItemArtist: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  queueUpcomingLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
   },
 });

@@ -6,7 +6,8 @@ import { AppIcon } from '@/components/ui/app-icon';
 import YTAuthModal from '@/components/yt-auth-modal'; // 🌟 Auth Modal Import
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import MiniPlayer from '@/components/mini-player';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -84,7 +85,7 @@ export default function SettingsScreen() {
   const colors = useTheme();
 
   // Scroll header animation variables
-  const lastOffset = useRef(0);
+  const lastScrollY = useSharedValue(0);
   const headerTranslateY = useSharedValue(0);
 
   const animatedHeaderStyle = useAnimatedStyle(() => {
@@ -175,20 +176,20 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleScroll = (event: any) => {
-    const currentOffset = event.nativeEvent.contentOffset.y;
-    const direction = currentOffset > lastOffset.current ? 'down' : 'up';
-    const headerHeight = 48 + insets.top;
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      const currentScrollY = event.contentOffset.y;
+      const delta = currentScrollY - lastScrollY.value;
+      const headerHeight = 48 + insets.top;
 
-    if (currentOffset <= 0) {
-      headerTranslateY.value = withTiming(0, { duration: 150 });
-    } else if (direction === 'down' && currentOffset > headerHeight && headerTranslateY.value === 0) {
-      headerTranslateY.value = withTiming(-headerHeight, { duration: 150 });
-    } else if (direction === 'up' && headerTranslateY.value === -headerHeight) {
-      headerTranslateY.value = withTiming(0, { duration: 150 });
+      if (currentScrollY <= 0) {
+        headerTranslateY.value = 0;
+      } else {
+        headerTranslateY.value = Math.max(-headerHeight, Math.min(0, headerTranslateY.value - delta));
+      }
+      lastScrollY.value = currentScrollY;
     }
-    lastOffset.current = currentOffset;
-  };
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -209,10 +210,10 @@ export default function SettingsScreen() {
         </Pressable>
       </Animated.View>
 
-      <ScrollView
+      <Animated.ScrollView
         contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]}
         showsVerticalScrollIndicator={false}
-        onScroll={({ nativeEvent }) => handleScroll(nativeEvent)}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
       >
         <View style={{ gap: 24 }}>
@@ -303,7 +304,7 @@ export default function SettingsScreen() {
 
           <View style={{ height: 96 }} />
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* 🌟 Auth Modal Mount */}
       <YTAuthModal
@@ -311,6 +312,7 @@ export default function SettingsScreen() {
         onClose={() => setIsAuthModalVisible(false)}
         onSuccess={() => setIsYTConnected(true)}
       />
+      <MiniPlayer />
     </View>
   );
 }

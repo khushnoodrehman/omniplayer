@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
-
 import { useProgress } from '@rntp/player';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function LyricsView() {
     const colors = useTheme();
@@ -16,11 +15,38 @@ export default function LyricsView() {
 
     const scrollViewRef = useRef<ScrollView>(null);
     const [activeIndex, setActiveIndex] = useState(-1);
+    const [scrollViewHeight, setScrollViewHeight] = useState(0);
 
-    // Sync logic (hamesha chalegi)
+    // 🌟 FIX: Har line ki exact screen position save karne ke liye
+    const itemLayouts = useRef<{ [key: number]: number }>({});
+
+    // User scroll detection taake jab user khud scroll kare toh player usse lare na
+    const isUserScrolling = useRef(false);
+    const scrollTimeout = useRef<any>(null);
+
+    const handleScrollBegin = () => {
+        isUserScrolling.current = true;
+        if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    };
+
+    const handleScrollEnd = () => {
+        if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+        scrollTimeout.current = setTimeout(() => {
+            isUserScrolling.current = false;
+            // Wapas auto-scroll on hone par current line par jao
+            if (scrollViewHeight > 0 && activeIndex !== -1 && itemLayouts.current[activeIndex] !== undefined) {
+                const centerOffset = scrollViewHeight / 2;
+                scrollViewRef.current?.scrollTo({
+                    y: Math.max(0, itemLayouts.current[activeIndex] - centerOffset + 20),
+                    animated: true
+                });
+            }
+        }, 2000);
+    };
+
     // 🌟 SYNC LYRICS WITH AUDIO POSITION
     useEffect(() => {
-        let isMounted = true; // 🌟 Naya check add kiya
+        let isMounted = true;
 
         if (lyrics.length === 0 || position === undefined) return;
 
@@ -33,17 +59,24 @@ export default function LyricsView() {
             }
         }
 
-        // 🌟 Check for isMounted before updating state
         if (isMounted && newIndex !== activeIndex && newIndex !== -1) {
             setActiveIndex(newIndex);
-            scrollViewRef.current?.scrollTo({ y: Math.max(0, newIndex * 40 - Dimensions.get('window').height * 0.15), animated: true });
+
+            // 🌟 FIX: Tukkay wala math khatam. Asli dynamic Y-Position se scroll karo!
+            if (!isUserScrolling.current && itemLayouts.current[newIndex] !== undefined) {
+                const centerOffset = scrollViewHeight > 0 ? (scrollViewHeight / 2) : 200;
+                // +20 isliye taake line bilkul center mein fixed feel ho
+                scrollViewRef.current?.scrollTo({
+                    y: Math.max(0, itemLayouts.current[newIndex] - centerOffset + 20),
+                    animated: true
+                });
+            }
         }
 
-        // 🌟 Cleanup function
         return () => {
             isMounted = false;
         };
-    }, [position, lyrics, activeIndex]);
+    }, [position, lyrics, activeIndex, scrollViewHeight]);
 
     if (loading) {
         return (
@@ -67,34 +100,46 @@ export default function LyricsView() {
             style={styles.container}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            onLayout={(e) => setScrollViewHeight(e.nativeEvent.layout.height)}
+            onScrollBeginDrag={handleScrollBegin}
+            onScrollEndDrag={handleScrollEnd}
+            onMomentumScrollBegin={handleScrollBegin}
+            onMomentumScrollEnd={handleScrollEnd}
         >
             {lyrics.map((lyric, index) => {
                 const isActive = index === activeIndex;
                 const isStatic = lyrics.length === 1 && lyric.time === 0;
 
                 return (
-                    <Pressable
+                    <View
                         key={index}
-                        onPress={() => {
-                            if (!isStatic && lyric.time !== undefined) {
-                                seek(lyric.time);
-                            }
+                        onLayout={(e) => {
+                            // 🌟 FIX: Har component render hote hi apni Y-Position yahan save karta hai
+                            itemLayouts.current[index] = e.nativeEvent.layout.y;
                         }}
-                        style={({ pressed }) => [
-                            pressed && { opacity: 0.7 }
-                        ]}
                     >
-                        <Text
-                            style={[
-                                styles.lyricLine,
-                                { color: isActive ? colors.text : colors.textSecondary },
-                                isActive && styles.activeLyric,
-                                isStatic && styles.staticLyric
+                        <Pressable
+                            onPress={() => {
+                                if (!isStatic && lyric.time !== undefined) {
+                                    seek(lyric.time);
+                                }
+                            }}
+                            style={({ pressed }) => [
+                                pressed && { opacity: 0.7 }
                             ]}
                         >
-                            {lyric.text || ' '}
-                        </Text>
-                    </Pressable>
+                            <Text
+                                style={[
+                                    styles.lyricLine,
+                                    { color: isActive ? colors.text : colors.textSecondary },
+                                    isActive && styles.activeLyric,
+                                    isStatic && styles.staticLyric
+                                ]}
+                            >
+                                {lyric.text || ' '}
+                            </Text>
+                        </Pressable>
+                    </View>
                 );
             })}
         </ScrollView>
@@ -110,7 +155,7 @@ const styles = StyleSheet.create({
         maxHeight: height * 0.5,
     },
     scrollContent: {
-        paddingVertical: 60, // Padding barhai hai taake start/end lines beech me ayen
+        paddingVertical: 60,
         paddingHorizontal: 24,
     },
     center: {
@@ -123,7 +168,7 @@ const styles = StyleSheet.create({
         fontSize: 22,
         fontWeight: '600',
         textAlign: 'center',
-        marginVertical: 10,
+        marginVertical: 6,
         opacity: 0.5,
     },
     activeLyric: {
@@ -136,7 +181,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '400',
         opacity: 0.8,
-        textAlign: 'left',
+        textAlign: 'center',
         lineHeight: 24,
     },
     errorText: {

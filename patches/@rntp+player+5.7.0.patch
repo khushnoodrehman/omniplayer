@@ -1,0 +1,15 @@
+diff --git a/node_modules/@rntp/player/package.json b/node_modules/@rntp/player/package.json
+index 2f352f3..be4425e 100644
+--- a/node_modules/@rntp/player/package.json
++++ b/node_modules/@rntp/player/package.json
+@@ -10,9 +10,9 @@
+   "types": "./lib/typescript/src/index.d.ts",
+   "exports": {
+     ".": {
++      "types": "./lib/typescript/src/index.d.ts",
+       "react-native": "./src/index.tsx",
+       "browser": "./lib/module/index.js",
+-      "types": "./lib/typescript/src/index.d.ts",
+       "import": "./lib/module/index.js",
+       "require": "./lib/commonjs/index.js"
+     },

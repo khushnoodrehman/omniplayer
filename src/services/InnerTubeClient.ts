@@ -1097,30 +1097,92 @@ export class InnerTubeClient {
      * Retrieve Sync/Static Lyrics from LRCLIB or InnerTube fallback
      */
     public static async getLyrics(title: string, artist: string, videoId?: string): Promise<any> {
-        const cleanArtist = artist.split('•')[0].trim();
-        const searchTitle = title.split('-').pop()?.trim() || title;
+        // Extract the primary artist name by splitting at typical separators (comma, ampersand, feat, etc.)
+        const getPrimary = (name: string): string => {
+            let clean = name.toLowerCase();
+            clean = clean.split('•')[0];
+            clean = clean.split(',')[0];
+            clean = clean.split('&')[0];
+            clean = clean.split('feat.')[0];
+            clean = clean.split('featuring')[0];
+            clean = clean.split('and')[0];
+            return clean.trim();
+        };
+
+        const artistParts = artist.split('•').map(p => p.trim());
+        let cleanArtist = artistParts[0] || '';
+        if ((cleanArtist.toLowerCase() === 'song' || cleanArtist.toLowerCase() === 'video') && artistParts.length > 1) {
+            cleanArtist = artistParts[1];
+        }
+        cleanArtist = cleanArtist
+            .replace(/\s*-\s*topic/gi, '')
+            .replace(/vevo$/gi, '')
+            .trim();
+
+        let searchTitle = title.split('-').pop()?.trim() || title;
+        searchTitle = searchTitle
+            .replace(/\s*[\(\[][^)]*official[^)]*[\)\]]/gi, '')
+            .replace(/\s*[\(\[][^)]*video[^)]*[\)\]]/gi, '')
+            .replace(/\s*[\(\[][^)]*audio[^)]*[\)\]]/gi, '')
+            .replace(/\s*[\(\[][^)]*lyric[^)]*[\)\]]/gi, '')
+            .replace(/\s*[\(\[][^)]*hd[^)]*[\)\]]/gi, '')
+            .replace(/\s*[\(\[][^)]*mv[^)]*[\)\]]/gi, '')
+            .replace(/\s*[\(\[][^)]*remastered[^)]*[\)\]]/gi, '')
+            .trim();
 
         // Layer 1: LRCLIB (Direct from Client-Side)
         try {
             if (cleanArtist) {
-                const url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(searchTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
-                const response = await fetch(url);
+                // 1. Try with the full artist string
+                let url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(searchTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
+                let response = await fetch(url);
                 if (response.ok) {
                     const data = await response.json();
                     if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib' };
                     if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib' };
                 }
+
+                // 2. Try with the primary artist (e.g. split by comma, ampersand, feat., etc.)
+                const queryPrimary = getPrimary(cleanArtist);
+                if (queryPrimary && queryPrimary !== cleanArtist.toLowerCase()) {
+                    url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(searchTitle)}&artist_name=${encodeURIComponent(queryPrimary)}`;
+                    response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib' };
+                        if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib' };
+                    }
+                }
             }
 
             // Try search in LRCLIB
-            const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${searchTitle} ${cleanArtist}`.trim())}`;
+            const queryPrimary = getPrimary(cleanArtist);
+            const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${searchTitle} ${queryPrimary || cleanArtist}`.trim())}`;
             const searchRes = await fetch(searchUrl);
             if (searchRes.ok) {
                 const searchData = await searchRes.json();
                 if (searchData && searchData.length > 0) {
                     const best = searchData[0];
-                    if (best.syncedLyrics) return { type: 'synced', lyrics: best.syncedLyrics, source: 'lrclib_search' };
-                    if (best.plainLyrics) return { type: 'static', lyrics: best.plainLyrics, source: 'lrclib_search' };
+                    const bestTitle = (best.trackName || '').toLowerCase();
+                    const bestArtist = (best.artistName || '').toLowerCase();
+                    const queryTitle = searchTitle.toLowerCase();
+                    const queryArtist = cleanArtist.toLowerCase();
+                    const bestPrimary = getPrimary(best.artistName || '');
+
+                    // Title aur Artist ka loose matching validation check
+                    const titleMatches = bestTitle.includes(queryTitle) || queryTitle.includes(bestTitle);
+                    const artistMatches = !queryArtist || 
+                        bestArtist.includes(queryArtist) || 
+                        queryArtist.includes(bestArtist) ||
+                        (queryPrimary && bestArtist.includes(queryPrimary)) ||
+                        (bestPrimary && queryArtist.includes(bestPrimary));
+
+                    if (titleMatches && artistMatches) {
+                        if (best.syncedLyrics) return { type: 'synced', lyrics: best.syncedLyrics, source: 'lrclib_search' };
+                        if (best.plainLyrics) return { type: 'static', lyrics: best.plainLyrics, source: 'lrclib_search' };
+                    } else {
+                        console.log(`[InnerTubeClient] Mismatched LRCLIB search result bypassed: "${best.trackName}" by "${best.artistName}" for query "${searchTitle}"`);
+                    }
                 }
             }
         } catch (lrclibErr) {

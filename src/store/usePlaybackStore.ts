@@ -321,9 +321,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
             const targetId = track.sourceType === 'youtube' ? track.id : '';
 
-            console.log(`[Zustand] Outgoing Lyrics Request -> Title: "${sendTitle}" | Artist: "${sendArtist}"`);
+            console.log(`[Zustand] Outgoing Lyrics Request -> Title: "${sendTitle}" | Artist: "${sendArtist}" | VideoId: "${targetId}"`);
 
             const data = await InnerTubeClient.getLyrics(sendTitle, sendArtist, targetId);
+
+            console.log(`[Zustand] Lyrics Response -> Type: "${data.type}" | Source: "${data.source || 'youtube'}"`);
 
             if (data.type === 'synced') {
                 const parseLRC = (lrcText: string): ParsedLyric[] => {
@@ -340,13 +342,18 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     });
                     return parsed;
                 };
-                set({ currentLyrics: parseLRC(data.lyrics), loadedLyricsTrackId: track.id });
+                const parsedLyrics = parseLRC(data.lyrics);
+                console.log(`[Zustand] Parsed SYNCED lyrics successfully: ${parsedLyrics.length} lines`);
+                set({ currentLyrics: parsedLyrics, loadedLyricsTrackId: track.id });
             } else if (data.type === 'static') {
+                console.log(`[Zustand] Loaded STATIC lyrics successfully (1 static block)`);
                 set({ currentLyrics: [{ time: 0, text: data.lyrics }], loadedLyricsTrackId: track.id });
             } else {
+                console.log(`[Zustand] Lyrics NOT available for this track`);
                 set({ lyricsError: 'Lyrics not available', loadedLyricsTrackId: track.id });
             }
         } catch (err) {
+            console.error(`[Zustand] Error loading lyrics:`, err);
             set({ lyricsError: 'Failed to load lyrics', loadedLyricsTrackId: null });
         } finally {
             set({ isLyricsLoading: false });

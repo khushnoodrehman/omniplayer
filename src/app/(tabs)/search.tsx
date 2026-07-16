@@ -11,7 +11,8 @@ import { InnerTubeClient } from '@/services/InnerTubeClient';
 import { useRouter } from 'expo-router';
 import TrackOptionsSheet from '@/components/track-options-sheet';
 import { useLocalAudio } from '@/hooks/use-local-audio';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import MiniPlayer from '@/components/mini-player';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 
 const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
@@ -184,7 +185,7 @@ export default function SearchScreen() {
   const [searchMode, setSearchMode] = useState<'online' | 'local'>('online');
 
   // Scroll header animation variables
-  const lastOffset = useRef(0);
+  const lastScrollY = useSharedValue(0);
   const headerTranslateY = useSharedValue(0);
 
   const animatedHeaderStyle = useAnimatedStyle(() => {
@@ -232,26 +233,32 @@ export default function SearchScreen() {
   const [displayedCount, setDisplayedCount] = useState(10);
 
 
-  const handleScroll = (event: any) => {
-    const currentOffset = event.contentOffset.y;
-    const direction = currentOffset > lastOffset.current ? 'down' : 'up';
-    const headerHeight = 48 + insets.top;
-
-    if (currentOffset <= 0) {
-      headerTranslateY.value = withTiming(0, { duration: 150 });
-    } else if (direction === 'down' && currentOffset > headerHeight && headerTranslateY.value === 0) {
-      headerTranslateY.value = withTiming(-headerHeight, { duration: 150 });
-    } else if (direction === 'up' && headerTranslateY.value === -headerHeight) {
-      headerTranslateY.value = withTiming(0, { duration: 150 });
-    }
-    lastOffset.current = currentOffset;
-
-    // Jab user bottom se 300 pixels upar ho
-    const isCloseToBottom = event.layoutMeasurement.height + currentOffset >= event.contentSize.height - 300;
-    if (isCloseToBottom && displayedCount < apiResults.length) {
-      setDisplayedCount((prev) => Math.min(prev + 10, apiResults.length)); // Agle 10 add karo
+  const checkLoadMore = () => {
+    if (displayedCount < apiResults.length) {
+      setDisplayedCount((prev) => Math.min(prev + 10, apiResults.length));
     }
   };
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      const currentScrollY = event.contentOffset.y;
+      const delta = currentScrollY - lastScrollY.value;
+      const headerHeight = 48 + insets.top;
+
+      if (currentScrollY <= 0) {
+        headerTranslateY.value = 0;
+      } else {
+        headerTranslateY.value = Math.max(-headerHeight, Math.min(0, headerTranslateY.value - delta));
+      }
+      lastScrollY.value = currentScrollY;
+
+      // Jab user bottom se 300 pixels upar ho
+      const isCloseToBottom = event.layoutMeasurement.height + currentScrollY >= event.contentSize.height - 300;
+      if (isCloseToBottom) {
+        runOnJS(checkLoadMore)();
+      }
+    }
+  });
   useEffect(() => {
     const trimmed = searchText.trim();
     if (!trimmed) {
@@ -405,10 +412,10 @@ export default function SearchScreen() {
         </Pressable>
       </Animated.View>
 
-      <ScrollView 
+      <Animated.ScrollView 
         contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]} 
         showsVerticalScrollIndicator={false}
-        onScroll={({ nativeEvent }) => handleScroll(nativeEvent)}
+        onScroll={scrollHandler}
         scrollEventThrottle={16}
       >
         <View style={{ gap: 24 }}>
@@ -655,13 +662,14 @@ export default function SearchScreen() {
 
           <View style={{ height: 96 }} />
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <TrackOptionsSheet
         isVisible={isTrackOptionsVisible}
         onClose={() => setIsTrackOptionsVisible(false)}
         track={selectedTrack}
       />
+      <MiniPlayer />
     </View>
   );
 }

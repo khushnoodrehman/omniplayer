@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text as RNText, StyleSheet, Pressable, ScrollView, Dimensions, Alert, TextInput } from 'react-native';
-import { BottomSheet, RNHostView } from '@expo/ui';
-import { useTheme } from '@/hooks/use-theme';
-import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import { AppIcon } from '@/components/ui/app-icon';
-import { Image } from 'expo-image';
-import { 
-    getPlaylistsDB, 
-    createPlaylistDB, 
-    addTrackToPlaylistDB, 
-    removeTrackFromPlaylistDB 
+import { useTheme } from '@/hooks/use-theme';
+import {
+    addTrackToPlaylistDB,
+    createPlaylistDB,
+    getPlaylistsDB,
+    removeTrackFromPlaylistDB
 } from '@/services/db';
+import { Track, usePlaybackStore } from '@/store/usePlaybackStore';
+import { BottomSheet, RNHostView } from '@expo/ui';
+import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
+import { Alert, Dimensions, Pressable, Text as RNText, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -80,14 +80,14 @@ export default function TrackOptionsSheet({
             `Are you sure you want to remove "${track.title}" from this playlist?`,
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Remove", 
-                    style: "destructive", 
+                {
+                    text: "Remove",
+                    style: "destructive",
                     onPress: async () => {
                         await removeTrackFromPlaylistDB(playlistId, track.id);
                         if (onTrackRemoved) onTrackRemoved();
                         onClose();
-                    } 
+                    }
                 }
             ]
         );
@@ -120,12 +120,12 @@ export default function TrackOptionsSheet({
         <BottomSheet
             isPresented={isVisible}
             onDismiss={onClose}
-            snapPoints={['full']}
+            snapPoints={[{ fraction: 0.25 }, 'half', { fraction: 0.9 }]}
             showDragIndicator={true}
         >
             <RNHostView matchContents>
                 <View style={[styles.container, { backgroundColor: colors.background }]}>
-                    
+
                     {/* View 1: Main Actions Menu */}
                     {currentView === 'actions' && (
                         <View style={{ gap: 20 }}>
@@ -157,11 +157,11 @@ export default function TrackOptionsSheet({
                                         pressed && styles.pressed
                                     ]}
                                 >
-                                    <AppIcon 
-                                        ios={isFavorited ? "heart.fill" : "heart"} 
-                                        android={isFavorited ? "heart" : "heart-outline"} 
-                                        size={22} 
-                                        color={isFavorited ? colors.pulseDot : colors.accent} 
+                                    <AppIcon
+                                        ios={isFavorited ? "heart.fill" : "heart"}
+                                        android={isFavorited ? "heart" : "heart-outline"}
+                                        size={22}
+                                        color={isFavorited ? colors.pulseDot : colors.accent}
                                     />
                                     <RNText style={[styles.actionLabel, { color: colors.text }]}>
                                         {isFavorited ? "Remove from Favorites" : "Add to Favorites"}
@@ -228,7 +228,7 @@ export default function TrackOptionsSheet({
                                 <RNText style={[styles.title, { color: colors.text }]}>Add to Playlist</RNText>
                             </View>
 
-                            <ScrollView 
+                            <ScrollView
                                 style={styles.scrollList}
                                 contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
                                 showsVerticalScrollIndicator={false}
@@ -293,11 +293,11 @@ export default function TrackOptionsSheet({
                                     placeholder="Enter playlist name..."
                                     placeholderTextColor={colors.textSecondary}
                                     style={[
-                                        styles.input, 
-                                        { 
-                                            backgroundColor: colors.backgroundElement, 
-                                            color: colors.text, 
-                                            borderColor: colors.cardBorder 
+                                        styles.input,
+                                        {
+                                            backgroundColor: colors.backgroundElement,
+                                            color: colors.text,
+                                            borderColor: colors.cardBorder
                                         }
                                     ]}
                                     autoFocus
@@ -316,7 +316,7 @@ export default function TrackOptionsSheet({
                             </View>
                         </View>
                     )}
-                    
+
                 </View>
             </RNHostView>
         </BottomSheet>
