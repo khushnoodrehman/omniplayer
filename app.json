@@ -36,7 +36,6 @@
       "enableProguardInReleaseBuilds": true,
       "ndk": {
         "abiFilters": [
-          "armeabi-v7a",
           "arm64-v8a"
         ]
       }
@@ -72,7 +71,17 @@
       "expo-font",
       "expo-image",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProjectProps": {
+              "ffmpegKitPackage": "audio"
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1101,12 +1101,9 @@ export class InnerTubeClient {
         const getPrimary = (name: string): string => {
             let clean = name.toLowerCase();
             clean = clean.split('•')[0];
-            clean = clean.split(',')[0];
-            clean = clean.split('&')[0];
-            clean = clean.split('feat.')[0];
-            clean = clean.split('featuring')[0];
-            clean = clean.split('and')[0];
-            return clean.trim();
+            // Split by word boundaries for and, feat, featuring, or literal symbols , &
+            const parts = clean.split(/\s+(?:and|feat\.?|featuring)\s+|[,&]/i);
+            return parts[0].trim();
         };
 
         const artistParts = artist.split('•').map(p => p.trim());
@@ -1119,7 +1116,26 @@ export class InnerTubeClient {
             .replace(/vevo$/gi, '')
             .trim();
 
-        let searchTitle = title.split('-').pop()?.trim() || title;
+        // Clean title if it contains artist name and hyphens
+        let searchTitle = title;
+        if (title.includes(' - ')) {
+            const parts = title.split(' - ').map(p => p.trim());
+            // Check if any part matches the artist name (case-insensitive)
+            const artistLower = cleanArtist.toLowerCase();
+            const nonArtistParts = parts.filter(p => {
+                const partLower = p.toLowerCase();
+                return !partLower.includes(artistLower) && !artistLower.includes(partLower);
+            });
+            if (nonArtistParts.length > 0) {
+                searchTitle = nonArtistParts.join(' - ');
+            } else {
+                // Fallback to the last part if all parts matched the artist (unlikely)
+                searchTitle = parts[parts.length - 1];
+            }
+        } else {
+            searchTitle = title;
+        }
+
         searchTitle = searchTitle
             .replace(/\s*[\(\[][^)]*official[^)]*[\)\]]/gi, '')
             .replace(/\s*[\(\[][^)]*video[^)]*[\)\]]/gi, '')

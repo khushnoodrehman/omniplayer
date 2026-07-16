@@ -17,12 +17,8 @@ export const cleanLrcToPlainText = (lrc: string): string => {
 export const getPrimaryArtist = (artist: string): string => {
     if (!artist) return '';
     let clean = artist.split('•')[0];
-    clean = clean.split(',')[0];
-    clean = clean.split('&')[0];
-    clean = clean.split('feat.')[0];
-    clean = clean.split('featuring')[0];
-    clean = clean.split('and')[0];
-    return clean.trim();
+    const parts = clean.split(/\s+(?:and|feat\.?|featuring)\s+|[,&]/i);
+    return parts[0].trim();
 };
 
 // Helper to transform YouTube Music artwork URL into 1000x1000 Ultra-HD resolution
