@@ -399,6 +399,7 @@ export default function SearchScreen() {
 
   const isSearchingUI = searchText.length > 0;
   const topResult = apiResults.length > 0 ? apiResults[0] : null; // Dynamic top result
+  const accountInfo = usePlaybackStore((state) => state.accountInfo);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -408,7 +409,11 @@ export default function SearchScreen() {
         <RNText style={[styles.headerTitle, { color: colors.text }]}>Search</RNText>
         <View style={{ flex: 1 }} />
         <Pressable onPress={() => router.push('/settings')} style={({ pressed }) => [styles.profileButton, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && styles.pressed]}>
-          <AppIcon ios="person.crop.circle.fill" android="person-circle-outline" size={28} color={colors.accent} />
+          {accountInfo?.avatar ? (
+            <Image source={{ uri: accountInfo.avatar }} style={{ width: 34, height: 34, borderRadius: 17 }} />
+          ) : (
+            <AppIcon ios="person.crop.circle.fill" android="person-circle-outline" size={28} color={colors.accent} />
+          )}
         </Pressable>
       </Animated.View>
 

@@ -362,6 +362,8 @@ export default function LibraryScreen() {
     }
   });
 
+  const accountInfo = usePlaybackStore((state) => state.accountInfo);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       
@@ -377,12 +379,20 @@ export default function LibraryScreen() {
             pressed && styles.pressed
           ]}
         >
-          <AppIcon
-            ios="person.crop.circle.fill"
-            android="person-circle"
-            size={28}
-            color={colors.accent}
-          />
+          {accountInfo?.avatar ? (
+            <Image
+              source={{ uri: accountInfo.avatar }}
+              style={{ width: 34, height: 34, borderRadius: 17 }}
+              contentFit="cover"
+            />
+          ) : (
+            <AppIcon
+              ios="person.crop.circle.fill"
+              android="person-circle"
+              size={28}
+              color={colors.accent}
+            />
+          )}
         </Pressable>
       </Animated.View>
 

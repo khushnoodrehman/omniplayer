@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, Alert, Switch, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
 import { AppIcon } from '@/components/ui/app-icon';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 import YTAuthModal from '@/components/yt-auth-modal'; // 🌟 Auth Modal Import
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -191,6 +193,8 @@ export default function SettingsScreen() {
     }
   });
 
+  const accountInfo = usePlaybackStore((state) => state.accountInfo);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       
@@ -206,7 +210,15 @@ export default function SettingsScreen() {
             pressed && styles.pressed
           ]}
         >
-          <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
+          {accountInfo?.avatar ? (
+            <Image
+              source={{ uri: accountInfo.avatar }}
+              style={{ width: 34, height: 34, borderRadius: 17 }}
+              contentFit="cover"
+            />
+          ) : (
+            <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
+          )}
         </Pressable>
       </Animated.View>
 

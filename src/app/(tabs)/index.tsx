@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Pressable, Dimensions, Text as RNText, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
+import { StyleSheet, View, Pressable, Dimensions, Text as RNText, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,9 +34,11 @@ export default function HomeScreen() {
   const colors = useTheme();
   const router = useRouter();
   const playTrack = usePlaybackStore((state) => state.playTrack);
+  const storeAccountInfo = usePlaybackStore((state) => state.accountInfo);
+  const fetchAccountInfo = usePlaybackStore((state) => state.fetchAccountInfo);
 
   const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
-  const [accountInfo, setAccountInfo] = useState<{ name: string; avatar: string } | null>(null);
+  const [localAccountInfo, setLocalAccountInfo] = useState<{ name: string; avatar: string } | null>(null);
 
   // Scroll header animation variables
   const lastScrollY = useSharedValue(0);
@@ -77,33 +79,18 @@ export default function HomeScreen() {
   });
   const [showSpeedDial, setShowSpeedDial] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const [continuationToken, setContinuationToken] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const isLoadingMoreRef = useRef(false);
 
   // Profile details load
   useEffect(() => {
-    const loadProfile = async () => {
-      if (!homeData.isLoggedIn) {
-        setAccountInfo(null);
-        return;
-      }
-      try {
-        const cached = await AsyncStorage.getItem('yt_account_info');
-        if (cached) {
-          setAccountInfo(JSON.parse(cached));
-        }
-        const live = await InnerTubeClient.getAccountInfo();
-        if (live) {
-          setAccountInfo(live);
-          await AsyncStorage.setItem('yt_account_info', JSON.stringify(live));
-        }
-      } catch (err) {
-        console.error("Failed to load profile details", err);
-      }
-    };
-    loadProfile();
-  }, [homeData.isLoggedIn]);
+    fetchAccountInfo();
+  }, []);
+
+  const effectiveAccountInfo = storeAccountInfo || localAccountInfo;
 
   // 🌟 REF TO PREVENT STALE CLOSURES IN FOCUS EFFECT
   const homeDataRef = useRef(homeData);
@@ -111,62 +98,61 @@ export default function HomeScreen() {
     homeDataRef.current = homeData;
   }, [homeData]);
 
+  // Fetch Data Function
+  const performFetch = useCallback(async (forceRefresh = false) => {
+    try {
+      const showSpeedDialVal = await AsyncStorage.getItem('settings_show_speed_dial');
+      if (showSpeedDialVal !== null) {
+        setShowSpeedDial(showSpeedDialVal === 'true');
+      }
+
+      const currentHomeData = homeDataRef.current;
+      const cookies = await AsyncStorage.getItem('yt_cookies');
+      const isUserConnected = !!cookies;
+      const wasUserConnected = currentHomeData.isLoggedIn;
+
+      const hasData = currentHomeData.shelves.length > 0 || currentHomeData.trending.length > 0 || currentHomeData.newReleases.length > 0;
+      if (!forceRefresh && hasData && isUserConnected === wasUserConnected) {
+        console.log("[HomeScreen] Skipped API fetch: data is cached and connection status has not changed.");
+        setIsLoading(false);
+        return;
+      }
+
+      console.log("[HomeScreen] Fetching fresh home screen data client-side...");
+      const data = await InnerTubeClient.getHomeData();
+      setHomeData({
+        isLoggedIn: data.isLoggedIn || false,
+        trending: data.trending || [],
+        newReleases: data.newReleases || [],
+        globalHits: data.globalHits || [],
+        regionalHits: data.regionalHits || [],
+        chartsPlaylists: data.chartsPlaylists || [],
+        countryName: data.countryName || '',
+        topTracks: data.topTracks || [],
+        shelves: data.shelves || [],
+        likedPlaylist: data.likedPlaylist || null
+      });
+      setContinuationToken(data.continuationToken || null);
+      fetchAccountInfo();
+    } catch (error) {
+      console.error("Home Data Fetch Error:", error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [fetchAccountInfo]);
+
+  // Pull to refresh handler
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    performFetch(true);
+  }, [performFetch]);
+
   // Fetch Data on Focus / Mount
   useFocusEffect(
     useCallback(() => {
-      let isMounted = true;
-      const fetchHomeData = async () => {
-        try {
-          // Read Speed Dial Setting
-          const showSpeedDialVal = await AsyncStorage.getItem('settings_show_speed_dial');
-          if (showSpeedDialVal !== null && isMounted) {
-            setShowSpeedDial(showSpeedDialVal === 'true');
-          }
-
-          const currentHomeData = homeDataRef.current;
-          const cookies = await AsyncStorage.getItem('yt_cookies');
-          const isUserConnected = !!cookies;
-          const wasUserConnected = currentHomeData.isLoggedIn;
-
-          // If we already have data in memory and the connection status didn't change, skip fetching
-          const hasData = currentHomeData.shelves.length > 0 || currentHomeData.trending.length > 0 || currentHomeData.newReleases.length > 0;
-          if (hasData && isUserConnected === wasUserConnected) {
-            console.log("[HomeScreen] Skipped API fetch: data is cached and connection status has not changed.");
-            if (isMounted) setIsLoading(false);
-            return;
-          }
-
-          console.log("[HomeScreen] Fetching home screen data client-side...");
-          const data = await InnerTubeClient.getHomeData();
-          if (isMounted) {
-            setHomeData({
-              isLoggedIn: data.isLoggedIn || false,
-              trending: data.trending || [],
-              newReleases: data.newReleases || [],
-              globalHits: data.globalHits || [],
-              regionalHits: data.regionalHits || [],
-              chartsPlaylists: data.chartsPlaylists || [],
-              countryName: data.countryName || '',
-              topTracks: data.topTracks || [],
-              shelves: data.shelves || [],
-              likedPlaylist: data.likedPlaylist || null
-            });
-            setContinuationToken(data.continuationToken || null);
-          }
-        } catch (error) {
-          console.error("Home Data Fetch Error:", error);
-        } finally {
-          if (isMounted) {
-            setIsLoading(false);
-          }
-        }
-      };
-
-      fetchHomeData();
-      return () => {
-        isMounted = false;
-      };
-    }, [])
+      performFetch(false);
+    }, [performFetch])
   );
 
   const greeting = (() => {
@@ -326,22 +312,29 @@ export default function HomeScreen() {
   };
 
   const loadMoreShelves = async () => {
-    if (isLoadingMore || !continuationToken) return;
+    if (isLoadingMoreRef.current || !continuationToken) return;
+    isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
     console.log('[Home] Loading more shelves...');
+    const token = continuationToken;
     try {
-      const res = await InnerTubeClient.getHomeContinuation(continuationToken);
-      if (res.shelves.length > 0) {
-        setHomeData(prev => ({
-          ...prev,
-          shelves: [...prev.shelves, ...res.shelves]
-        }));
+      const res = await InnerTubeClient.getHomeContinuation(token);
+      if (res.shelves && res.shelves.length > 0) {
+        setHomeData(prev => {
+          const existingTitles = new Set(prev.shelves.map(s => (s.title || '').trim().toLowerCase()));
+          const newShelves = res.shelves.filter(s => s.title && !existingTitles.has(s.title.trim().toLowerCase()));
+          return {
+            ...prev,
+            shelves: [...prev.shelves, ...newShelves]
+          };
+        });
       }
-      setContinuationToken(res.continuationToken);
+      setContinuationToken(res.continuationToken || null);
     } catch (err) {
       console.error('[Home] Failed to load more shelves:', err);
     } finally {
       setIsLoadingMore(false);
+      isLoadingMoreRef.current = false;
     }
   };
 
@@ -390,9 +383,9 @@ export default function HomeScreen() {
             pressed && styles.pressed
           ]}
         >
-          {accountInfo?.avatar ? (
+          {effectiveAccountInfo?.avatar ? (
             <Image
-              source={{ uri: accountInfo.avatar }}
+              source={{ uri: effectiveAccountInfo.avatar }}
               style={{ width: 34, height: 34, borderRadius: 17 }}
               contentFit="cover"
             />
@@ -408,6 +401,14 @@ export default function HomeScreen() {
         removeClippedSubviews={true}
         scrollEventThrottle={16}
         onScroll={scrollHandler}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[colors.accent]}
+            tintColor={colors.accent}
+          />
+        }
       >
         <View style={{ gap: 24 }}>
           {(() => {
@@ -714,9 +715,9 @@ export default function HomeScreen() {
             onTouchEnd={(e) => e.stopPropagation()}
           >
             <View style={{ alignItems: 'center', gap: 16, marginVertical: 16 }}>
-              {accountInfo?.avatar ? (
+              {effectiveAccountInfo?.avatar ? (
                 <Image 
-                  source={{ uri: accountInfo.avatar }} 
+                  source={{ uri: effectiveAccountInfo.avatar }} 
                   style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 1, borderColor: colors.cardBorder }} 
                   contentFit="cover" 
                 />
@@ -728,7 +729,7 @@ export default function HomeScreen() {
               
               <View style={{ alignItems: 'center', gap: 4 }}>
                 <RNText style={[styles.modalTitle, { color: colors.text, marginBottom: 0, textAlign: 'center' }]}>
-                  {accountInfo?.name || 'Connected User'}
+                  {effectiveAccountInfo?.name || 'Connected User'}
                 </RNText>
                 <RNText style={{ fontSize: 13, color: colors.textSecondary }}>
                   {homeData.isLoggedIn ? 'YouTube Music Connected' : 'Guest Account'}
@@ -743,7 +744,8 @@ export default function HomeScreen() {
                     try {
                       await AsyncStorage.removeItem('yt_cookies');
                       await AsyncStorage.removeItem('yt_account_info');
-                      setAccountInfo(null);
+                      setLocalAccountInfo(null);
+                      await fetchAccountInfo();
                       setHomeData(prev => ({ ...prev, isLoggedIn: false }));
                       Alert.alert("Success", "Disconnected from YouTube Music.");
                       setIsProfileModalVisible(false);

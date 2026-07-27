@@ -74,6 +74,10 @@ interface PlaybackState {
     history: Track[];
     playRequestTimestamp: number;
 
+    // 🌟 ACCOUNT / AUTH STATE
+    accountInfo: { name: string; avatar: string } | null;
+    fetchAccountInfo: () => Promise<void>;
+
     // 🌟 LYRICS CACHING STATE
     currentLyrics: ParsedLyric[];
     isLyricsLoading: boolean;
@@ -139,6 +143,28 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     history: [],
     playRequestTimestamp: 0,
 
+    accountInfo: null,
+    fetchAccountInfo: async () => {
+        try {
+            const cached = await AsyncStorage.getItem('yt_account_info');
+            if (cached) {
+                set({ accountInfo: JSON.parse(cached) });
+            }
+            const cookies = await AsyncStorage.getItem('yt_cookies');
+            if (cookies) {
+                const live = await InnerTubeClient.getAccountInfo();
+                if (live) {
+                    set({ accountInfo: live });
+                    await AsyncStorage.setItem('yt_account_info', JSON.stringify(live));
+                }
+            } else {
+                set({ accountInfo: null });
+            }
+        } catch (err) {
+            console.error('[PlaybackStore] Error fetching account info:', err);
+        }
+    },
+
     // 🌟 LYRICS STATE INIT
     currentLyrics: [],
     isLyricsLoading: false,
@@ -202,6 +228,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 lrcExportDirectoryUri: cachedUri || null,
                 nowPlayingPlaylist
             });
+            await get().fetchAccountInfo();
         } catch (error) {
             console.error("Error loading store data:", error);
         }
@@ -273,26 +300,54 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
         }
         set({ isLyricsLoading: true, lyricsError: null, currentLyrics: [], loadedLyricsTrackId: null });
         try {
-            // Check downloads database for offline cached lyrics
+            const parseLRC = (lrcText: string): ParsedLyric[] => {
+                const lines = lrcText.split('\n');
+                const parsed: ParsedLyric[] = [];
+                const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\]/;
+                lines.forEach(line => {
+                    const match = line.match(timeRegex);
+                    if (match) {
+                        const min = parseInt(match[1], 10);
+                        const sec = parseFloat(match[2]);
+                        parsed.push({ time: (min * 60) + sec, text: line.replace(timeRegex, '').trim() });
+                    }
+                });
+                return parsed;
+            };
+
+            // 1. Check local .lrc file alongside song file if track is local
+            const isLocal = track.sourceType === 'local' || (typeof track.uri === 'string' && track.uri.startsWith('file://'));
+            if (isLocal && track.uri) {
+                try {
+                    const lrcPath = track.uri.replace(/\.[^/.]+$/, '') + '.lrc';
+                    console.log(`[PlaybackStore] Checking for local .lrc file at: ${lrcPath}`);
+                    const fileInfo = await FileSystem.getInfoAsync(lrcPath);
+                    if (fileInfo.exists) {
+                        const lrcContent = await FileSystem.readAsStringAsync(lrcPath, { encoding: FileSystem.EncodingType.UTF8 });
+                        if (lrcContent && lrcContent.trim().length > 0) {
+                            const parsedLyrics = parseLRC(lrcContent);
+                            if (parsedLyrics.length > 0) {
+                                console.log(`[PlaybackStore] Successfully loaded local .lrc synced lyrics (${parsedLyrics.length} lines)`);
+                                set({ currentLyrics: parsedLyrics, isLyricsLoading: false, loadedLyricsTrackId: track.id });
+                                return;
+                            } else {
+                                console.log(`[PlaybackStore] Loaded local .lrc as static text`);
+                                set({ currentLyrics: [{ time: 0, text: lrcContent }], isLyricsLoading: false, loadedLyricsTrackId: track.id });
+                                return;
+                            }
+                        }
+                    }
+                } catch (lrcErr) {
+                    console.warn('[PlaybackStore] Error reading local .lrc file:', lrcErr);
+                }
+            }
+
+            // 2. Check downloads database for offline cached lyrics
             try {
                 const download = await getDownloadDB(track.id);
                 if (download && download.lyrics && download.lyricsType && download.lyricsType !== 'none') {
                     console.log(`[PlaybackStore] Using offline cached lyrics for: ${track.title}`);
                     if (download.lyricsType === 'synced') {
-                        const parseLRC = (lrcText: string): ParsedLyric[] => {
-                            const lines = lrcText.split('\n');
-                            const parsed: ParsedLyric[] = [];
-                            const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\]/;
-                            lines.forEach(line => {
-                                const match = line.match(timeRegex);
-                                if (match) {
-                                    const min = parseInt(match[1], 10);
-                                    const sec = parseFloat(match[2]);
-                                    parsed.push({ time: (min * 60) + sec, text: line.replace(timeRegex, '').trim() });
-                                }
-                            });
-                            return parsed;
-                        };
                         set({ currentLyrics: parseLRC(download.lyrics), isLyricsLoading: false, loadedLyricsTrackId: track.id });
                     } else {
                         set({ currentLyrics: [{ time: 0, text: download.lyrics }], isLyricsLoading: false, loadedLyricsTrackId: track.id });
