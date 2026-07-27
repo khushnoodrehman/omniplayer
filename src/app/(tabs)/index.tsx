@@ -11,6 +11,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import MiniPlayer from '@/components/mini-player';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
+import { HomeSkeleton } from '@/components/home-skeleton';
+import { AppHeader } from '@/components/app-header';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -361,9 +363,13 @@ export default function HomeScreen() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
-        <RNText style={{ color: colors.textSecondary, marginTop: 16 }}>Loading your music...</RNText>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AppHeader
+          title="Omniplayer"
+          onPressProfile={() => setIsProfileModalVisible(true)}
+          headerTranslateY={headerTranslateY}
+        />
+        <HomeSkeleton />
       </View>
     );
   }
@@ -372,28 +378,11 @@ export default function HomeScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       
       {/* Animated Header */}
-      <Animated.View style={animatedHeaderStyle}>
-        <RNText style={[styles.headerTitle, { color: colors.accent, fontWeight: '800' }]}>Omniplayer</RNText>
-        <View style={{ flex: 1 }} />
-        <Pressable
-          onPress={() => setIsProfileModalVisible(true)}
-          style={({ pressed }) => [
-            styles.profileButton,
-            { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
-            pressed && styles.pressed
-          ]}
-        >
-          {effectiveAccountInfo?.avatar ? (
-            <Image
-              source={{ uri: effectiveAccountInfo.avatar }}
-              style={{ width: 34, height: 34, borderRadius: 17 }}
-              contentFit="cover"
-            />
-          ) : (
-            <AppIcon ios="person.crop.circle.fill" android="person-circle" size={28} color={colors.accent} />
-          )}
-        </Pressable>
-      </Animated.View>
+      <AppHeader
+        title="Omniplayer"
+        onPressProfile={() => setIsProfileModalVisible(true)}
+        headerTranslateY={headerTranslateY}
+      />
 
       <Animated.ScrollView
         contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]}
@@ -421,70 +410,99 @@ export default function HomeScreen() {
               return !t.includes('speed dial') && !t.includes('listen again') && !t.includes('quick picks');
             });
 
+            // Chunk speed dial items into 8 per page
+            const sdItems = speedDialShelf?.items || [];
+            const sdPages: HomeShelfItem[][] = [];
+            for (let i = 0; i < sdItems.length; i += 8) {
+              sdPages.push(sdItems.slice(i, i + 8));
+            }
+
             return (
               <View style={{ gap: 24 }}>
-                {/* ── SECTION A: Speed dial ── */}
-                {showSpeedDial && speedDialShelf && (
-                  <View style={{ gap: 12, paddingHorizontal: 16 }}>
-                    <RNText style={[styles.sectionTitle, { color: colors.text }]}>{speedDialShelf.title}</RNText>
-                    <View style={styles.speedDialGrid}>
-                      {speedDialShelf.items.slice(0, 8).map((item, idx) => {
-                        const isPlayable = item.itemType === 'track';
-                        return (
-                          <Pressable
-                            key={`sd-${item.id}-${idx}`}
-                            onPress={() => {
-                              if (isPlayable) {
-                                handlePlay(item, speedDialShelf.items);
-                              } else if (item.itemType === 'artist') {
-                                router.push(`/artist?id=${item.id}`);
-                              } else {
-                                router.push(`/playlist?id=${item.id}`);
-                              }
-                            }}
-                            style={({ pressed }) => [styles.speedDialCard, pressed && styles.pressed]}
-                          >
-                            <Image source={{ uri: item.image }} style={styles.speedDialImage} contentFit="cover" />
-                            <LinearGradient
-                              colors={['transparent', 'rgba(0,0,0,0.65)']}
-                              style={StyleSheet.absoluteFill}
-                            />
-                            <View style={styles.speedDialTextContainer}>
-                              <RNText style={styles.speedDialText} numberOfLines={2}>{item.title}</RNText>
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                      {/* 9th block: 5 dots dice button */}
-                      <Pressable
-                        onPress={handlePlayRandomMusic}
-                        style={({ pressed }) => [
-                          styles.speedDialCard,
-                          styles.speedDialDotsCard,
-                          { backgroundColor: colors.backgroundElement },
-                          pressed && styles.pressed
-                        ]}
-                      >
-                        <View style={styles.dotsContainer}>
-                          <View style={styles.dotsRow}>
-                            <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
-                            <View style={{ width: 8 }} />
-                            <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
-                          </View>
-                          <View style={[styles.dot, { backgroundColor: colors.textSecondary, marginVertical: 6 }]} />
-                          <View style={styles.dotsRow}>
-                            <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
-                            <View style={{ width: 8 }} />
-                            <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
+                {/* ── SECTION A: Speed dial / Quick Picks Grid Pager ── */}
+                {showSpeedDial && speedDialShelf && sdPages.length > 0 && (
+                  <View style={{ gap: 12 }}>
+                    <RNText style={[styles.sectionTitle, styles.sectionTitlePadding, { color: colors.text }]}>
+                      {speedDialShelf.title || 'Quick picks'}
+                    </RNText>
+                    <ScrollView
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      decelerationRate="fast"
+                      contentContainerStyle={{ paddingHorizontal: 16 }}
+                    >
+                      {sdPages.map((pageItems, pageIdx) => (
+                        <View
+                          key={`sd-page-${pageIdx}`}
+                          style={{
+                            width: screenWidth - 32,
+                            marginRight: pageIdx < sdPages.length - 1 ? 16 : 0,
+                          }}
+                        >
+                          <View style={styles.speedDialGrid}>
+                            {pageItems.map((item, idx) => {
+                              const isPlayable = item.itemType === 'track';
+                              return (
+                                <Pressable
+                                  key={`sd-${item.id}-${idx}`}
+                                  onPress={() => {
+                                    if (isPlayable) {
+                                      handlePlay(item, sdItems);
+                                    } else if (item.itemType === 'artist') {
+                                      router.push(`/artist?id=${item.id}`);
+                                    } else {
+                                      router.push(`/playlist?id=${item.id}`);
+                                    }
+                                  }}
+                                  style={({ pressed }) => [styles.speedDialCard, pressed && styles.pressed]}
+                                >
+                                  <Image source={{ uri: item.image }} style={styles.speedDialImage} contentFit="cover" />
+                                  <LinearGradient
+                                    colors={['transparent', 'rgba(0,0,0,0.65)']}
+                                    style={StyleSheet.absoluteFill}
+                                  />
+                                  <View style={styles.speedDialTextContainer}>
+                                    <RNText style={styles.speedDialText} numberOfLines={2}>{item.title}</RNText>
+                                  </View>
+                                </Pressable>
+                              );
+                            })}
+                            {/* If last page has < 8 items, add 9th random dice button */}
+                            {pageIdx === sdPages.length - 1 && pageItems.length < 8 && (
+                              <Pressable
+                                onPress={handlePlayRandomMusic}
+                                style={({ pressed }) => [
+                                  styles.speedDialCard,
+                                  styles.speedDialDotsCard,
+                                  { backgroundColor: colors.backgroundElement },
+                                  pressed && styles.pressed
+                                ]}
+                              >
+                                <View style={styles.dotsContainer}>
+                                  <View style={styles.dotsRow}>
+                                    <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
+                                    <View style={{ width: 8 }} />
+                                    <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
+                                  </View>
+                                  <View style={[styles.dot, { backgroundColor: colors.textSecondary, marginVertical: 6 }]} />
+                                  <View style={styles.dotsRow}>
+                                    <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
+                                    <View style={{ width: 8 }} />
+                                    <View style={[styles.dot, { backgroundColor: colors.textSecondary }]} />
+                                  </View>
+                                </View>
+                              </Pressable>
+                            )}
                           </View>
                         </View>
-                      </Pressable>
-                    </View>
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
 
                 {/* ── SECTION B: Your Playlists / Featured Charts ── */}
-                {homeData.likedPlaylist ? (
+                {homeData.isLoggedIn && homeData.likedPlaylist && homeData.likedPlaylist.trackCount > 0 && homeData.likedPlaylist.title !== 'Favorite Songs' ? (
                   <View style={{ gap: 12, paddingHorizontal: 16 }}>
                     <View style={styles.resultsSectionHeader}>
                       <View style={{ gap: 2 }}>
@@ -796,9 +814,9 @@ const styles = StyleSheet.create({
   sectionTitlePadding: { paddingHorizontal: 16 },
   viewAllText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
   horizontalRow: { paddingHorizontal: 16 },
-  trendingCard: { width: 160 },
-  cardImageContainer: { borderRadius: 12, overflow: 'hidden', width: 160, height: 160 },
-  cardImage: { width: 160, height: 160 },
+  trendingCard: { width: 138 },
+  cardImageContainer: { borderRadius: 12, overflow: 'hidden', width: 138, height: 138 },
+  cardImage: { width: 138, height: 138 },
   songTitle: { fontSize: 14, fontWeight: '600' },
   songArtist: { fontSize: 12 },
   chartCardPurple: { width: 270, height: 128, backgroundColor: '#593090', borderRadius: 16, padding: 16, position: 'relative' },

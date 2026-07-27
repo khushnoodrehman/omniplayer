@@ -13,6 +13,7 @@ import TrackOptionsSheet from '@/components/track-options-sheet';
 import { useLocalAudio } from '@/hooks/use-local-audio';
 import MiniPlayer from '@/components/mini-player';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
+import { AppHeader } from '@/components/app-header';
 
 const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
@@ -405,17 +406,11 @@ export default function SearchScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       
       {/* Animated Header */}
-      <Animated.View style={animatedHeaderStyle}>
-        <RNText style={[styles.headerTitle, { color: colors.text }]}>Search</RNText>
-        <View style={{ flex: 1 }} />
-        <Pressable onPress={() => router.push('/settings')} style={({ pressed }) => [styles.profileButton, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && styles.pressed]}>
-          {accountInfo?.avatar ? (
-            <Image source={{ uri: accountInfo.avatar }} style={{ width: 34, height: 34, borderRadius: 17 }} />
-          ) : (
-            <AppIcon ios="person.crop.circle.fill" android="person-circle-outline" size={28} color={colors.accent} />
-          )}
-        </Pressable>
-      </Animated.View>
+      <AppHeader
+        title="Search"
+        onPressProfile={() => router.push('/settings')}
+        headerTranslateY={headerTranslateY}
+      />
 
       <Animated.ScrollView 
         contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]} 

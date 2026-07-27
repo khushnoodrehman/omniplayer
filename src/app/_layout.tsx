@@ -25,6 +25,12 @@ export default function TabLayout() {
       await initDB();
       await loadStoreData();
       try {
+        const { useThemeStore } = require('@/store/useThemeStore');
+        await useThemeStore.getState().loadThemeSettings();
+      } catch (tErr) {
+        console.error("Failed to load theme settings:", tErr);
+      }
+      try {
         await setupPlayer();
         playbackService();
         await usePlaybackStore.getState().syncWithNativePlayer();

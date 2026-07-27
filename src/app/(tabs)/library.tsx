@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MiniPlayer from '@/components/mini-player';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import { AppHeader } from '@/components/app-header';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -368,33 +369,11 @@ export default function LibraryScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       
       {/* Animated Header */}
-      <Animated.View style={animatedHeaderStyle}>
-        <RNText style={[styles.headerTitle, { color: colors.text }]}>Your Library</RNText>
-        <View style={{ flex: 1 }} />
-        <Pressable
-          onPress={() => router.push('/settings')}
-          style={({ pressed }) => [
-            styles.profileButton,
-            { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
-            pressed && styles.pressed
-          ]}
-        >
-          {accountInfo?.avatar ? (
-            <Image
-              source={{ uri: accountInfo.avatar }}
-              style={{ width: 34, height: 34, borderRadius: 17 }}
-              contentFit="cover"
-            />
-          ) : (
-            <AppIcon
-              ios="person.crop.circle.fill"
-              android="person-circle"
-              size={28}
-              color={colors.accent}
-            />
-          )}
-        </Pressable>
-      </Animated.View>
+      <AppHeader
+        title="Your Library"
+        onPressProfile={() => router.push('/settings')}
+        headerTranslateY={headerTranslateY}
+      />
 
       <Animated.ScrollView
         contentContainerStyle={[styles.contentContainer, { paddingTop: 48 + insets.top + 16 }]}
