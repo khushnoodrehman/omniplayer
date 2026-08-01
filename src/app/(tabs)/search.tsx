@@ -10,6 +10,7 @@ import { getRecentSearchesDB, addRecentSearchDB, deleteRecentSearchDB, clearAllR
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import { useRouter } from 'expo-router';
 import TrackOptionsSheet from '@/components/track-options-sheet';
+import DownloadSheet from '@/components/download-sheet';
 import { useLocalAudio } from '@/hooks/use-local-audio';
 import MiniPlayer from '@/components/mini-player';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
@@ -120,17 +121,18 @@ const LocalAudioItem = ({ title, subtitle, onPress, onOptionsPress }: LocalAudio
   );
 };
 
-// --- YOUTUBE ITEM (Loading State Support Ke Sath) ---
+// --- YOUTUBE ITEM ---
 interface YouTubeItemProps {
   title: string;
   subtitle: string;
   imageUri: string;
   onPress: () => void;
+  onDownload?: () => void;
   isLoading?: boolean;
   isLiked?: boolean;
   onLike?: () => void;
 }
-const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isLiked, onLike }: YouTubeItemProps) => {
+const YouTubeItem = ({ title, subtitle, imageUri, onPress, onDownload, isLoading, isLiked, onLike }: YouTubeItemProps) => {
   try {
     const colors = useTheme();
     return (
@@ -159,9 +161,11 @@ const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isLiked, o
             />
           </Pressable>
         )}
-        <Pressable onPress={() => alert('Downloading track...')} style={styles.downloadButton}>
-          <AppIcon ios="arrow.down.to.line" android="download-outline" size={20} color={colors.textSecondary} />
-        </Pressable>
+        {onDownload && (
+          <Pressable onPress={onDownload} style={styles.downloadButton}>
+            <AppIcon ios="arrow.down.to.line" android="download-outline" size={20} color={colors.textSecondary} />
+          </Pressable>
+        )}
       </Pressable>
     );
   } catch (error) {
@@ -180,6 +184,22 @@ export default function SearchScreen() {
   const router = useRouter();
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
+
+  const [isDownloadSheetVisible, setIsDownloadSheetVisible] = useState(false);
+  const [downloadSheetTrack, setDownloadSheetTrack] = useState<Track | null>(null);
+
+  const handleOpenDownloadSheet = (item: any) => {
+    const trackToDownload: Track = {
+      id: item.id,
+      title: safeString(item.title, 'Unknown Title'),
+      artist: safeString(item.artist, 'Unknown Artist'),
+      image: safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+      duration: item.duration || 0,
+      sourceType: 'youtube'
+    };
+    setDownloadSheetTrack(trackToDownload);
+    setIsDownloadSheetVisible(true);
+  };
 
   // UI States
   const { audioFiles } = useLocalAudio();
@@ -631,6 +651,7 @@ export default function SearchScreen() {
                                   subtitle={`${safeString(item.artist, 'Unknown Artist')} • ${formatDuration(item.duration)}`}
                                   imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
                                   onPress={() => handlePlayYouTubeTrack(item)}
+                                  onDownload={() => handleOpenDownloadSheet(item)}
                                   isLoading={loadingTrackId === item.id}
                                   isLiked={favoriteTracks.includes(item.id)}
                                   onLike={() => toggleFavorite({
@@ -662,6 +683,12 @@ export default function SearchScreen() {
           <View style={{ height: 96 }} />
         </View>
       </Animated.ScrollView>
+
+      <DownloadSheet
+        isVisible={isDownloadSheetVisible}
+        onClose={() => setIsDownloadSheetVisible(false)}
+        track={downloadSheetTrack}
+      />
 
       <TrackOptionsSheet
         isVisible={isTrackOptionsVisible}

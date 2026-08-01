@@ -1,5 +1,6 @@
 import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { BottomSheet, RNHostView } from '@expo/ui';
 import { Image } from 'expo-image';
@@ -11,7 +12,6 @@ import {
   Text as RNText,
   ScrollView,
   StyleSheet,
-  useColorScheme,
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,7 +23,7 @@ import { getDownloadDB } from '@/services/db';
 import { BlurView } from 'expo-blur';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
 const formatTime = (secs: number) => {
   const m = Math.floor(secs / 60);
@@ -54,13 +54,20 @@ export default function NowPlayingModal() {
     duration,
     downloadQueue,
     currentDownloadingTrackId,
-    downloadTrack,
     currentLyrics,
   } = usePlaybackStore();
 
   const [pageIndex, setPageIndex] = useState(0);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Dynamic Theme Colors
+  const textColor = isDark ? '#ffffff' : '#1e2023';
+  const textSecondaryColor = isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(30, 32, 35, 0.7)';
+  const iconColor = isDark ? '#ffffff' : '#1e2023';
+  const iconSubduedColor = isDark ? 'rgba(255, 255, 255, 0.6)' : 'rgba(30, 32, 35, 0.6)';
+  const playBtnBg = isDark ? '#ffffff' : colors.accent;
+  const playBtnIconColor = isDark ? '#1e2023' : '#ffffff';
 
   const handleScroll = (e: any) => {
     const offsetX = e.nativeEvent.contentOffset.x;
@@ -108,46 +115,47 @@ export default function NowPlayingModal() {
         const download = await getDownloadDB(currentTrack.id);
         if (download && download.localPath) {
           const fileInfo = await FileSystem.getInfoAsync(download.localPath);
-          if (fileInfo.exists) {
-            if (active) setDownloadStatus('downloaded');
+          if (fileInfo.exists && active) {
+            setDownloadStatus('downloaded');
             return;
           }
         }
         if (active) setDownloadStatus('idle');
-      } catch (err) {
-        console.error("[NowPlayingModal] Error checking download status:", err);
+      } catch {
+        if (active) setDownloadStatus('idle');
       }
     };
     checkDownloadStatus();
-    return () => {
-      active = false;
-    };
-  }, [currentTrack, downloadQueue, currentDownloadingTrackId]);
+    return () => { active = false; };
+  }, [currentTrack?.id]);
 
   if (!currentTrack) return null;
 
   const isFavorited = favoriteTracks.includes(currentTrack.id);
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
 
+  const isDownloadingThis = currentDownloadingTrackId === currentTrack.id;
+  const isEnqueuedThis = downloadQueue.some((t) => t.id === currentTrack.id);
+
+  let activeDownloadStatus: 'idle' | 'enqueued' | 'downloading' | 'downloaded' = downloadStatus;
+  if (isDownloadingThis) {
+    activeDownloadStatus = 'downloading';
+  } else if (isEnqueuedThis) {
+    activeDownloadStatus = 'enqueued';
+  }
+
   const handleSeekBarPress = (e: any) => {
-    const { locationX } = e.nativeEvent;
-    const clickRatio = Math.max(0, Math.min(locationX / seekBarWidth, 1));
-    seek(clickRatio * duration);
+    if (duration <= 0 || seekBarWidth <= 0) return;
+    const touchX = e.nativeEvent.locationX;
+    const percentage = Math.max(0, Math.min(1, touchX / seekBarWidth));
+    const newPosition = percentage * duration;
+    seek(newPosition);
   };
-
-  const isEnqueued = downloadQueue.some(item => item.track.id === currentTrack.id);
-  const isDownloading = currentDownloadingTrackId === currentTrack.id;
-
-  const activeDownloadStatus = downloadStatus === 'downloaded'
-    ? 'downloaded'
-    : (isDownloading ? 'downloading' : (isEnqueued ? 'enqueued' : 'idle'));
 
   return (
     <BottomSheet
       isPresented={isPlayerVisible}
-      onDismiss={() => {
-        setPlayerVisible(false);
-      }}
+      onDismiss={() => setPlayerVisible(false)}
       snapPoints={['full']}
       showDragIndicator={true}
     >
@@ -161,7 +169,7 @@ export default function NowPlayingModal() {
               blurRadius={70}
             />
             <BlurView intensity={100} style={StyleSheet.absoluteFill} tint={isDark ? "dark" : "light"} />
-            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.3)' }} />
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: isDark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.65)' }} />
           </View>
 
           <View
@@ -184,14 +192,14 @@ export default function NowPlayingModal() {
                     ios="chevron.down"
                     android="chevron-down"
                     size={24}
-                    color="#ffffff"
+                    color={iconColor}
                   />
                 </Pressable>
 
                 {/* Pager indicators (dots) */}
                 <View style={styles.topIndicatorRow}>
-                  <View style={[styles.indicatorDot, { backgroundColor: '#ffffff', opacity: pageIndex === 0 ? 1 : 0.3 }]} />
-                  <View style={[styles.indicatorDot, { backgroundColor: '#ffffff', opacity: pageIndex === 1 ? 1 : 0.3 }]} />
+                  <View style={[styles.indicatorDot, { backgroundColor: iconColor, opacity: pageIndex === 0 ? 1 : 0.3 }]} />
+                  <View style={[styles.indicatorDot, { backgroundColor: iconColor, opacity: pageIndex === 1 ? 1 : 0.3 }]} />
                 </View>
 
                 <Pressable
@@ -202,7 +210,7 @@ export default function NowPlayingModal() {
                     ios="ellipsis"
                     android="ellipsis-vertical"
                     size={22}
-                    color="#ffffff"
+                    color={iconColor}
                   />
                 </Pressable>
               </View>
@@ -224,7 +232,7 @@ export default function NowPlayingModal() {
                     <View style={styles.artCardContainer}>
                       <Image
                         source={{ uri: currentTrack.image }}
-                        style={[styles.albumArt, { borderColor: 'rgba(255,255,255,0.1)' }]}
+                        style={[styles.albumArt, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}
                         contentFit="cover"
                       />
                     </View>
@@ -233,10 +241,10 @@ export default function NowPlayingModal() {
                   <View style={styles.metadataContainer}>
                     <View style={styles.infoRow}>
                       <View style={{ flex: 1 }}>
-                        <RNText style={[styles.trackTitle, { color: '#ffffff' }]} numberOfLines={1}>
+                        <RNText style={[styles.trackTitle, { color: textColor }]} numberOfLines={1}>
                           {currentTrack.title}
                         </RNText>
-                        <RNText style={[styles.trackArtist, { color: 'rgba(255,255,255,0.7)' }]} numberOfLines={1}>
+                        <RNText style={[styles.trackArtist, { color: textSecondaryColor }]} numberOfLines={1}>
                           {displayArtist}
                         </RNText>
                       </View>
@@ -248,12 +256,12 @@ export default function NowPlayingModal() {
                           ios={isFavorited ? 'heart.fill' : 'heart'}
                           android={isFavorited ? 'heart' : 'heart-outline'}
                           size={24}
-                          color={isFavorited ? colors.pulseDot : 'rgba(255,255,255,0.6)'}
+                          color={isFavorited ? colors.accent : iconSubduedColor}
                         />
                       </Pressable>
                     </View>
 
-                    <RNText style={styles.activeLyricLineText} numberOfLines={1}>
+                    <RNText style={[styles.activeLyricLineText, { color: textSecondaryColor }]} numberOfLines={1}>
                       {activeLyricText ? `(${activeLyricText})` : ' '}
                     </RNText>
 
@@ -267,7 +275,7 @@ export default function NowPlayingModal() {
                         style={styles.actionIconButton}
                       >
                         {activeDownloadStatus === 'idle' && (
-                          <AppIcon ios="arrow.down.to.line" android="download-outline" size={22} color="rgba(255,255,255,0.6)" />
+                          <AppIcon ios="arrow.down.to.line" android="download-outline" size={22} color={iconSubduedColor} />
                         )}
                         {activeDownloadStatus === 'enqueued' && (
                           <AppIcon ios="clock" android="time-outline" size={22} color={colors.accent} />
@@ -280,14 +288,14 @@ export default function NowPlayingModal() {
                         )}
                       </Pressable>
 
-                      <View style={styles.sourceBadgeInline}>
+                      <View style={[styles.sourceBadgeInline, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }]}>
                         <AppIcon
                           ios="folder.fill"
                           android="folder-open-outline"
                           size={12}
-                          color="rgba(255,255,255,0.5)"
+                          color={iconSubduedColor}
                         />
-                        <RNText style={styles.sourceBadgeInlineText}>
+                        <RNText style={[styles.sourceBadgeInlineText, { color: textSecondaryColor }]}>
                           {currentTrack.sourceType === 'local' ? 'Local' : 'YouTube'}
                         </RNText>
                       </View>
@@ -296,7 +304,7 @@ export default function NowPlayingModal() {
                         onPress={() => setIsTrackOptionsVisible(true)}
                         style={styles.actionIconButton}
                       >
-                        <AppIcon ios="ellipsis" android="ellipsis-vertical" size={22} color="rgba(255,255,255,0.6)" />
+                        <AppIcon ios="ellipsis" android="ellipsis-vertical" size={22} color={iconSubduedColor} />
                       </Pressable>
                     </View>
                   </View>
@@ -305,13 +313,13 @@ export default function NowPlayingModal() {
                 {/* Page 2: Lyrics */}
                 <View style={[styles.pagerPage, { width: screenWidth }]}>
                   <View style={styles.lyricsPageHeader}>
-                    <RNText style={styles.lyricsPageTitle} numberOfLines={1}>
+                    <RNText style={[styles.lyricsPageTitle, { color: textColor }]} numberOfLines={1}>
                       {currentTrack.title}
                     </RNText>
-                    <RNText style={styles.lyricsPageArtist} numberOfLines={1}>
+                    <RNText style={[styles.lyricsPageArtist, { color: textSecondaryColor }]} numberOfLines={1}>
                       {displayArtist}
                     </RNText>
-                    <RNText style={styles.lyricsPageActiveLyric} numberOfLines={1}>
+                    <RNText style={[styles.lyricsPageActiveLyric, { color: colors.accent }]} numberOfLines={1}>
                       {activeLyricText ? `(${activeLyricText})` : ' '}
                     </RNText>
                   </View>
@@ -325,85 +333,82 @@ export default function NowPlayingModal() {
             {/* STATIC BOTTOM SECTION */}
             <View style={styles.bottomSection}>
               <View style={styles.seekbarRow}>
-                <RNText style={styles.timestampTextHuawei}>{formatTime(position)}</RNText>
+                <RNText style={[styles.timestampTextHuawei, { color: textSecondaryColor }]}>{formatTime(position)}</RNText>
                 <Pressable
                   onPress={handleSeekBarPress}
                   onLayout={(e) => setSeekBarWidth(e.nativeEvent.layout.width)}
                   style={styles.seekbarContainerInline}
                 >
-                  <View style={[styles.seekbarBg, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-                    <View style={[styles.seekbarFill, { backgroundColor: '#ffffff', width: `${progressPercentage}%` }]} />
+                  <View style={[styles.seekbarBg, { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' }]}>
+                    <View style={[styles.seekbarFill, { backgroundColor: colors.accent, width: `${progressPercentage}%` }]} />
                   </View>
                 </Pressable>
-                <RNText style={styles.timestampTextHuawei}>{formatTime(duration)}</RNText>
+                <RNText style={[styles.timestampTextHuawei, { color: textSecondaryColor }]}>{formatTime(duration)}</RNText>
               </View>
 
               <View style={styles.buttonRow}>
                 <Pressable onPress={toggleShuffle}>
-                  <AppIcon ios="shuffle" android="shuffle" size={22} color={isShuffle ? colors.accent : 'rgba(255,255,255,0.6)'} />
+                  <AppIcon ios="shuffle" android="shuffle" size={22} color={isShuffle ? colors.accent : iconSubduedColor} />
                 </Pressable>
                 <Pressable onPress={() => playPrevious()}>
-                  <AppIcon ios="backward.fill" android="play-back" size={30} color="#ffffff" />
+                  <AppIcon ios="backward.fill" android="play-back" size={30} color={iconColor} />
                 </Pressable>
                 <Pressable
                   onPress={togglePlay}
-                  style={[styles.playPauseButtonHuawei, { backgroundColor: '#ffffff' }]}
+                  style={[styles.playPauseButtonHuawei, { backgroundColor: playBtnBg }]}
                 >
-                  <AppIcon ios={isPlaying ? 'pause.fill' : 'play.fill'} android={isPlaying ? 'pause' : 'play'} size={36} color="#1e2023" />
+                  <AppIcon ios={isPlaying ? 'pause.fill' : 'play.fill'} android={isPlaying ? 'pause' : 'play'} size={36} color={playBtnIconColor} />
                 </Pressable>
                 <Pressable onPress={() => playNext()}>
-                  <AppIcon ios="forward.fill" android="play-forward" size={30} color="#ffffff" />
+                  <AppIcon ios="forward.fill" android="play-forward" size={30} color={iconColor} />
                 </Pressable>
                 <Pressable onPress={toggleRepeat}>
-                  <AppIcon ios="repeat" android="repeat" size={22} color={isRepeat ? colors.accent : 'rgba(255,255,255,0.6)'} />
+                  <AppIcon ios="repeat" android="repeat" size={22} color={isRepeat ? colors.accent : iconSubduedColor} />
                 </Pressable>
               </View>
             </View>
           </View>
+
+          <DownloadSheet
+            isVisible={isDownloadSheetVisible}
+            onClose={() => setIsDownloadSheetVisible(false)}
+            track={currentTrack}
+          />
+
+          <TrackOptionsSheet
+            isVisible={isTrackOptionsVisible}
+            onClose={() => setIsTrackOptionsVisible(false)}
+            track={currentTrack}
+          />
         </View>
       </RNHostView>
-      <DownloadSheet
-        isVisible={isDownloadSheetVisible}
-        onClose={() => setIsDownloadSheetVisible(false)}
-        track={currentTrack}
-        onStartDownload={(options) => {
-          downloadTrack(currentTrack, options);
-        }}
-      />
-      <TrackOptionsSheet
-        isVisible={isTrackOptionsVisible}
-        onClose={() => setIsTrackOptionsVisible(false)}
-        track={currentTrack}
-      />
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
-    width: screenWidth,
-    height: screenHeight,
-    overflow: 'hidden',
+    flex: 1,
   },
   mainCanvas: {
     flex: 1,
-    paddingHorizontal: 0, // 🌟 FIX: Removed horizontal padding here to allow full width swiping
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   header: {
-    marginBottom: 8,
-    paddingHorizontal: 16, // 🌟 Added here instead
+    width: '100%',
+    paddingHorizontal: 20,
+    marginTop: 8,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
-    height: 48,
+    height: 44,
   },
   headerMenuButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -413,28 +418,31 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   indicatorDot: {
-    height: 6,
     width: 6,
+    height: 6,
     borderRadius: 3,
   },
   artSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    paddingVertical: 12,
   },
   artCardContainer: {
-    position: 'relative',
-    width: Math.min(screenWidth - 80, 280),
-    height: Math.min(screenWidth - 80, 280),
-    aspectRatio: 1,
-    flexShrink: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: screenWidth - 72,
+    height: screenWidth - 72,
+    maxWidth: 320,
+    maxHeight: 320,
+    borderRadius: 24,
+    overflow: 'hidden',
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
   },
   albumArt: {
     width: '100%',
     height: '100%',
-    borderRadius: 16,
     borderWidth: 1,
   },
   metadataContainer: {
@@ -445,6 +453,7 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     width: '100%',
   },
   trackTitle: {
@@ -466,7 +475,6 @@ const styles = StyleSheet.create({
   },
   activeLyricLineText: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
     fontStyle: 'italic',
     textAlign: 'left',
     marginVertical: 12,
@@ -489,14 +497,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
   },
   sourceBadgeInlineText: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.6)',
     fontWeight: '600',
   },
   lyricsPageHeader: {
@@ -509,37 +515,34 @@ const styles = StyleSheet.create({
   lyricsPageTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
-    textAlign: 'center', // 🌟 FIX: Centered
+    textAlign: 'center',
   },
   lyricsPageArtist: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
     fontWeight: '500',
-    textAlign: 'center', // 🌟 FIX: Centered
+    textAlign: 'center',
   },
   lyricsPageActiveLyric: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
     fontStyle: 'italic',
     marginTop: 4,
     fontWeight: '600',
-    textAlign: 'center', // 🌟 FIX: Centered
+    textAlign: 'center',
   },
   pagerContainer: {
     flex: 1,
-    width: '100%', // 🌟 FIX: width 'auto' ko 100% kiya
+    width: '100%',
     justifyContent: 'center',
   },
   scrollViewPager: {
     flex: 1,
-    width: '100%', // 🌟 FIX: Guaranteed full width
+    width: '100%',
   },
   pagerPage: {
     height: '100%',
-    width: screenWidth, // 🌟 FIX: Exact screen width
+    width: screenWidth,
     justifyContent: 'center',
-    alignItems: 'center', // Keeps content in center
+    alignItems: 'center',
   },
   bottomSection: {
     width: '100%',
@@ -579,7 +582,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-evenly',
     width: '100%',
-    marginBottom: 36, // 🌟 FIX: 50 hata kar normal margin set kiya (insets handle kar raha hai oopar)
+    marginBottom: 36,
   },
   playPauseButtonHuawei: {
     width: 64,
