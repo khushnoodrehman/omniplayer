@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,29 +11,14 @@ import { getPlaylistsDB, deletePlaylistDB, renamePlaylistDB, createPlaylistDB } 
 import { extractLocalMetadata } from '@/services/metadata';
 import TrackOptionsSheet from '@/components/track-options-sheet';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MiniPlayer from '@/components/mini-player';
-import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import { AppHeader } from '@/components/app-header';
 
 const { width: screenWidth } = Dimensions.get('window');
 
-// Baqi dummy data wese hi rakha hai for other tabs
-const playlists = [
-  { id: '1', title: 'My Favorites', subtitle: '24 songs', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDrCPHRwyp_exPi9aDDdnJ8cL97H2-4KSYTswpEv8S2cFZYZ9Kfk7UK7hu_-ljzpYgyEkPhUfM4FYFeqDCB6-tqDeS4mhI85_QTgElSmwF49Twp7KpDY1dqPG28TeUxFAHKDDqCDB9wzaoAWNmDSmbzCs6puvxBeD24yjt8c2Gfh1HZn1n4-fdWTaVsUsTflwtfmXXKWdEDVtfHkt0AO_Za6oiMlvZGVEyaJKpk8k8zvK-lcE-m9396UYCvdOqdkXOH7rjnmg7WOOyC' },
-  { id: '2', title: 'Gym Tracks', subtitle: '12 songs', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCJ6DODbRup1lG5P4VqPimqTj1kp6maPwlFe2aa5d3wgOl2gZPUW5PMD9nB5HkWJe9wX4IzBCUZDdeMMGqzCm9eCQcJ7z8Xcxt1wf4UE1vWdG__JE3mFQ15kTM-HulJnqBJsrMWf4EMH-gLnzuMX9wCI_6H7UuoD0UDpGuGJGatKs0KYDtYetBvkEiup9ppjqklyxVFyCf1DN01pNImN_TonFmW-A94PM5engwudFlkZfg6z31r55BTN2DY7tRUgF9CZIiZ5X902-P7' },
-  { id: '3', title: 'Lofi Beats', subtitle: '35 songs', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBPLnXCW7m2-veRxMrx1GIDLYFiF2OSblr8PUz1fmCfovonespXMtltgr01YToIKoIxFUi-01iM1nk7LEiStAgH9ULUQjD6fVl8_hDz4nH2NByTl5QWiqFUdlWEAa3qCr9DdNAgtZWXupykOXgAqm6RSqgjCXEABoCPG6DRHPHekgwxSHHXPuIPZ3CwakLyuO1foVdYVcMVrdkVMHZ0s0mOE26MdV15ZaigTjOlXC3HDrqdQwlFTRBfG5SelLCuduPjf4KMEnRCmUpN' }
-];
-
-const artists = [
-  { id: '1', title: 'M83', subtitle: '1 album • 12 songs', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBfDQPHqfdMWlnSFtNGjCGU2tsWf_TpMUmYCWaSEAj5TsUK_i9A7JdDXSjHiPVmzRTUf5lfxN7qDA7Xc6SEbew2B40CWecdj5gCSFA8mLnPkNUuisIyCEuypQdDUNMaN_tjacAB2opATgHvFuoepOiAdu9gFMvsxhPyxA3QrOINSuch9Xol67oCmpM90EbKwTvcvj1peKsrojgjZpfCxeeMlBnf91TtHn9hudRUOIyVCIeLGPT8Z3vwIcfEVKG41F01pHVVpVK6W2ho' },
-  { id: '2', title: 'The Weeknd', subtitle: '2 albums • 28 songs', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuPNB6gYmZ4ytE_AY-ngGfpJczbo_AZRaq-nSEZpfSmv18XSj7cbomjV0l7KSax6nYlG5yGJT6varZ4CR3wUCTMHPWI1ZmxwzcXkBeHdGf4GX39-UafNS6a0D-vQVS2AltRUwbP47WlYWsIZtGju95yp7y7p-kleMTfm5zRIjc6dGEJHqcU_BgDlf6cq8isCOaFqFf27Cp0yYdUqwy4f7oBecRo8A2pTqiVxx30a8JjL46kmiAQn2urMbWK_flA2nV7V6qtdSXkICVo' }
-];
-
-const folders = [
-  { id: '1', title: 'Download', subtitle: '18 audio files • /storage/emulated/0/Download' },
-  { id: '2', title: 'Music', subtitle: '45 audio files • /storage/emulated/0/Music' }
-];
+// 🌟 Persistent Module-Level Metadata Cache (Fixes Tab Switching Glitch & Re-render Flickering)
+const localMetadataCache = new Map<string, { title: string; artist: string; album: string; artwork: string | null }>();
 
 interface LocalTrackItemProps {
   track: any;
@@ -44,6 +29,7 @@ interface LocalTrackItemProps {
   playTrack: (track: Track, newQueue: Track[]) => void;
   localQueue: Track[];
   onTrackOptions: (track: Track) => void;
+  onMetaExtracted?: () => void;
 }
 
 function LocalTrackItem({
@@ -54,28 +40,38 @@ function LocalTrackItem({
   toggleFavorite,
   playTrack,
   localQueue,
-  onTrackOptions
+  onTrackOptions,
+  onMetaExtracted
 }: LocalTrackItemProps) {
-  const [meta, setMeta] = useState<{ title: string; artist: string; artwork: string | null }>({
-    title: track.filename.replace(/\.[^/.]+$/, ""),
-    artist: 'Local Audio',
-    artwork: track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null
+  const cachedMeta = localMetadataCache.get(track.uri);
+
+  const [meta, setMeta] = useState<{ title: string; artist: string; album: string; artwork: string | null }>({
+    title: cachedMeta?.title || track.filename.replace(/\.[^/.]+$/, ""),
+    artist: cachedMeta?.artist || 'Local Audio',
+    album: cachedMeta?.album || 'Local Album',
+    artwork: cachedMeta?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null)
   });
 
   useEffect(() => {
+    if (localMetadataCache.has(track.uri)) return;
+
     let active = true;
     const loadMetadata = async () => {
       try {
         const result = await extractLocalMetadata(track.uri);
         if (result && active) {
-          setMeta({
+          const data = {
             title: result.title || track.filename.replace(/\.[^/.]+$/, ""),
             artist: result.artist || 'Local Audio',
+            album: result.album || 'Local Album',
             artwork: result.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null)
-          });
+          };
+          localMetadataCache.set(track.uri, data);
+          setMeta(data);
+          onMetaExtracted?.();
         }
       } catch (err) {
-        // Fallback to default
+        // Fallback
       }
     };
     loadMetadata();
@@ -98,7 +94,7 @@ function LocalTrackItem({
     playTrack(updatedTrack, updatedQueue);
   };
 
-  const currentTrackId = localQueue[index].id;
+  const currentTrackId = localQueue[index]?.id || track.id;
   const isFavorited = favoriteTracks.includes(currentTrackId);
 
   return (
@@ -154,7 +150,8 @@ function LocalTrackItem({
   );
 }
 
-const tabs = ['Playlists', 'Songs', 'Artists & Albums', 'Folders'];
+// 🌟 Tab Restructuring: Removed 'Folders', Split into 'Artists' and 'Albums'
+const tabs = ['Playlists', 'Songs', 'Artists', 'Albums'];
 
 export default function LibraryScreen() {
   const insets = useSafeAreaInsets();
@@ -163,6 +160,7 @@ export default function LibraryScreen() {
   const playTrack = usePlaybackStore((state) => state.playTrack);
   const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
   const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
+  
   const [activeTab, setActiveTab] = useState('Songs');
   const [localPlaylists, setLocalPlaylists] = useState<any[]>([]);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
@@ -173,6 +171,11 @@ export default function LibraryScreen() {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
 
+  // Search Header States
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [metaVersion, setMetaVersion] = useState(0);
+
   const nowPlayingPlaylist = usePlaybackStore((state) => state.nowPlayingPlaylist);
   const [ytLikedPlaylist, setYtLikedPlaylist] = useState<any>(null);
   const [isYTConnected, setIsYTConnected] = useState(false);
@@ -181,25 +184,8 @@ export default function LibraryScreen() {
   const lastScrollY = useSharedValue(0);
   const headerTranslateY = useSharedValue(0);
 
-  const animatedHeaderStyle = useAnimatedStyle(() => {
-    const headerHeight = 48 + insets.top;
-    return {
-      transform: [{ translateY: headerTranslateY.value }],
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: headerHeight,
-      paddingTop: insets.top,
-      backgroundColor: colors.background,
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.cardBorder,
-      zIndex: 10,
-    };
-  });
+  // Custom Hook for Local Audio Files
+  const { audioFiles, permissionResponse, requestPermission, loading } = useLocalAudio();
 
   // Check YT connection and load Liked Playlist
   useEffect(() => {
@@ -211,12 +197,10 @@ export default function LibraryScreen() {
         if (active) setIsYTConnected(connected);
         
         if (connected) {
-          // 1. Load cached liked playlist metadata
           const cached = await AsyncStorage.getItem('yt_liked_playlist');
           if (cached && active) {
             setYtLikedPlaylist(JSON.parse(cached));
           }
-          // 2. Fetch live Liked Playlist details
           const liveDetails = await InnerTubeClient.getPlaylistDetails('LM');
           if (liveDetails && active) {
             const parsedLiked = {
@@ -327,26 +311,97 @@ export default function LibraryScreen() {
     );
   };
 
-  // Custom Hook use kar liya
-  const { audioFiles, permissionResponse, requestPermission, loading } = useLocalAudio();
+  // Base Queue for Zustand store
+  const localQueue: Track[] = useMemo(() => {
+    return audioFiles.map(track => {
+      const cached = localMetadataCache.get(track.uri);
+      return {
+        id: track.id,
+        title: cached?.title || track.filename.replace(/\.[^/.]+$/, ""),
+        artist: cached?.artist || 'Local Audio',
+        image: cached?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'),
+        duration: track.duration,
+        sourceType: 'local' as const,
+        uri: track.uri
+      };
+    });
+  }, [audioFiles, metaVersion]);
 
-  // Helper function to format duration (seconds to mm:ss)
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  // 🌟 Filtered Audio Files (Pure JS Filter for Songs Tab)
+  const filteredAudioFiles = useMemo(() => {
+    if (!searchQuery.trim()) return audioFiles;
+    const q = searchQuery.toLowerCase().trim();
+    return audioFiles.filter(track => {
+      const cached = localMetadataCache.get(track.uri);
+      const title = (cached?.title || track.filename.replace(/\.[^/.]+$/, "")).toLowerCase();
+      const artist = (cached?.artist || 'Local Audio').toLowerCase();
+      const album = (cached?.album || '').toLowerCase();
+      return title.includes(q) || artist.includes(q) || album.includes(q);
+    });
+  }, [audioFiles, searchQuery, metaVersion]);
 
-  // Queue banane ka logic (Zustand store ke liye)
-  const localQueue: Track[] = audioFiles.map(track => ({
-    id: track.id,
-    title: track.filename.replace(/\.[^/.]+$/, ""),
-    artist: 'Local Audio',
-    image: track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
-    duration: track.duration,
-    sourceType: 'local' as const,
-    uri: track.uri
-  }));
+  // 🌟 Dynamic Grouping for Artists Tab
+  const groupedArtists = useMemo(() => {
+    const artistMap = new Map<string, { name: string; songs: Track[]; image: string | null }>();
+    audioFiles.forEach(track => {
+      const cached = localMetadataCache.get(track.uri);
+      const artistName = cached?.artist || 'Local Audio';
+      const art = cached?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null);
+      if (!artistMap.has(artistName)) {
+        artistMap.set(artistName, { name: artistName, songs: [], image: art });
+      }
+      const group = artistMap.get(artistName)!;
+      group.songs.push({
+        id: track.id,
+        title: cached?.title || track.filename.replace(/\.[^/.]+$/, ""),
+        artist: artistName,
+        image: art || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+        duration: track.duration,
+        sourceType: 'local',
+        uri: track.uri
+      });
+      if (!group.image && art) group.image = art;
+    });
+
+    let list = Array.from(artistMap.values());
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(a => a.name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [audioFiles, searchQuery, metaVersion]);
+
+  // 🌟 Dynamic Grouping for Albums Tab
+  const groupedAlbums = useMemo(() => {
+    const albumMap = new Map<string, { name: string; artistName: string; songs: Track[]; image: string | null }>();
+    audioFiles.forEach(track => {
+      const cached = localMetadataCache.get(track.uri);
+      const albumName = cached?.album || 'Local Album';
+      const artistName = cached?.artist || 'Local Audio';
+      const art = cached?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null);
+      if (!albumMap.has(albumName)) {
+        albumMap.set(albumName, { name: albumName, artistName, songs: [], image: art });
+      }
+      const group = albumMap.get(albumName)!;
+      group.songs.push({
+        id: track.id,
+        title: cached?.title || track.filename.replace(/\.[^/.]+$/, ""),
+        artist: artistName,
+        image: art || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+        duration: track.duration,
+        sourceType: 'local',
+        uri: track.uri
+      });
+      if (!group.image && art) group.image = art;
+    });
+
+    let list = Array.from(albumMap.values());
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(a => a.name.toLowerCase().includes(q) || a.artistName.toLowerCase().includes(q));
+    }
+    return list;
+  }, [audioFiles, searchQuery, metaVersion]);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -363,16 +418,19 @@ export default function LibraryScreen() {
     }
   });
 
-  const accountInfo = usePlaybackStore((state) => state.accountInfo);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       
-      {/* Animated Header */}
+      {/* 🌟 Header with Search Bar Toggle */}
       <AppHeader
         title="Your Library"
-        onPressProfile={() => router.push('/settings')}
         headerTranslateY={headerTranslateY}
+        showSearchIcon={true}
+        isSearchActive={isSearchActive}
+        onToggleSearch={setIsSearchActive}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        searchPlaceholder="Search songs, artists, albums..."
       />
 
       <Animated.ScrollView
@@ -449,11 +507,10 @@ export default function LibraryScreen() {
           {/* Tab Contents */}
           <View style={{ paddingHorizontal: 16, gap: 12 }}>
 
-            {/* Real Data Integrated Here */}
+            {/* 🎵 SONGS TAB */}
             {activeTab === 'Songs' && (
               <View style={{ gap: 12 }}>
                 {permissionResponse?.status !== 'granted' ? (
-                  // Permission Request UI
                   <View style={[styles.centerState, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
                     <RNText style={[styles.listItemTitle, { color: colors.text, marginBottom: 12 }]}>
                       We need access to your local music
@@ -466,23 +523,20 @@ export default function LibraryScreen() {
                     </Pressable>
                   </View>
                 ) : loading ? (
-                  // Loading State
                   <View style={[styles.centerState, { borderColor: 'transparent' }]}>
                     <ActivityIndicator size="large" color={colors.accent} />
                     <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary, marginTop: 12 }]}>
                       Scanning your device...
                     </RNText>
                   </View>
-                ) : audioFiles.length === 0 ? (
-                  // Empty State
+                ) : filteredAudioFiles.length === 0 ? (
                   <View style={[styles.centerState, { borderColor: 'transparent' }]}>
                     <RNText style={[styles.listItemTitle, { color: colors.textSecondary }]}>
-                      No audio files found.
+                      {searchQuery.trim() ? `No songs found matching "${searchQuery}"` : 'No audio files found.'}
                     </RNText>
                   </View>
                 ) : (
-                  // Mapping Real Audio Files
-                  audioFiles.map((track, index) => (
+                  filteredAudioFiles.map((track, index) => (
                     <LocalTrackItem
                       key={track.id}
                       track={track}
@@ -496,16 +550,16 @@ export default function LibraryScreen() {
                         setSelectedTrack(t);
                         setIsTrackOptionsVisible(true);
                       }}
+                      onMetaExtracted={() => setMetaVersion(v => v + 1)}
                     />
                   ))
                 )}
               </View>
             )}
 
-            {/* Baqi Tabs Code Wese Hi Hai */}
+            {/* 📑 PLAYLISTS TAB */}
             {activeTab === 'Playlists' && (
               <View style={{ gap: 12 }}>
-                {/* "+ Create Playlist" Button Row */}
                 <Pressable
                   style={[
                     styles.listItem, 
@@ -529,7 +583,6 @@ export default function LibraryScreen() {
 
                 {nowPlayingPlaylist || (isYTConnected && ytLikedPlaylist) || localPlaylists.length > 0 ? (
                   <>
-                    {/* 🌟 NOW PLAYING PLAYLIST CARD */}
                     {nowPlayingPlaylist && (
                       <Pressable
                         style={[
@@ -566,7 +619,6 @@ export default function LibraryScreen() {
                       </Pressable>
                     )}
 
-                    {/* 🌟 YT LIKED PLAYLIST CARD */}
                     {isYTConnected && ytLikedPlaylist && (
                       <Pressable
                         style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
@@ -591,7 +643,6 @@ export default function LibraryScreen() {
                       </Pressable>
                     )}
 
-                    {/* LOCAL PLAYLISTS */}
                     {localPlaylists.map((playlist) => (
                       <Pressable
                         key={playlist.id}
@@ -633,47 +684,79 @@ export default function LibraryScreen() {
               </View>
             )}
 
-            {activeTab === 'Artists & Albums' && (
+            {/* 🎤 ARTISTS TAB */}
+            {activeTab === 'Artists' && (
               <View style={{ gap: 12 }}>
-                {artists.map((artist) => (
-                  <Pressable
-                    key={artist.id}
-                    style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                    onPress={() => alert(`Opening details for artist: ${artist.title}`)}
-                  >
-                    <Image source={{ uri: artist.image }} style={styles.listItemArtRound} contentFit="cover" />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{artist.title}</RNText>
-                      <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{artist.subtitle}</RNText>
-                    </View>
-                    <Pressable onPress={() => alert(`Options for artist: ${artist.title}`)} style={styles.moreButton}>
-                      <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                {groupedArtists.length === 0 ? (
+                  <View style={[styles.centerState, { borderColor: 'transparent' }]}>
+                    <RNText style={[styles.listItemTitle, { color: colors.textSecondary }]}>
+                      {searchQuery.trim() ? `No artists found matching "${searchQuery}"` : 'No local artists found.'}
+                    </RNText>
+                  </View>
+                ) : (
+                  groupedArtists.map((artist) => (
+                    <Pressable
+                      key={artist.name}
+                      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+                      onPress={() => {
+                        if (artist.songs.length > 0) {
+                          playTrack(artist.songs[0], artist.songs);
+                        }
+                      }}
+                    >
+                      <Image
+                        source={{ uri: artist.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
+                        style={styles.listItemArtRound}
+                        contentFit="cover"
+                      />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{artist.name}</RNText>
+                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {artist.songs.length} {artist.songs.length === 1 ? 'song' : 'songs'}
+                        </RNText>
+                      </View>
+                      <AppIcon ios="play.fill" android="play" size={18} color={colors.accent} />
                     </Pressable>
-                  </Pressable>
-                ))}
+                  ))
+                )}
               </View>
             )}
 
-            {activeTab === 'Folders' && (
+            {/* 💿 ALBUMS TAB */}
+            {activeTab === 'Albums' && (
               <View style={{ gap: 12 }}>
-                {folders.map((folder) => (
-                  <Pressable
-                    key={folder.id}
-                    style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                    onPress={() => alert(`Opening folder: ${folder.title}`)}
-                  >
-                    <View style={[styles.folderIconWrapper, { backgroundColor: colors.audioIconBackground }]}>
-                      <AppIcon ios="folder" android="folder" size={22} color={colors.accent} />
-                    </View>
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{folder.title}</RNText>
-                      <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{folder.subtitle}</RNText>
-                    </View>
-                    <Pressable onPress={() => alert(`Options for folder: ${folder.title}`)} style={styles.moreButton}>
-                      <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                {groupedAlbums.length === 0 ? (
+                  <View style={[styles.centerState, { borderColor: 'transparent' }]}>
+                    <RNText style={[styles.listItemTitle, { color: colors.textSecondary }]}>
+                      {searchQuery.trim() ? `No albums found matching "${searchQuery}"` : 'No local albums found.'}
+                    </RNText>
+                  </View>
+                ) : (
+                  groupedAlbums.map((album) => (
+                    <Pressable
+                      key={album.name}
+                      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+                      onPress={() => {
+                        if (album.songs.length > 0) {
+                          playTrack(album.songs[0], album.songs);
+                        }
+                      }}
+                    >
+                      <Image
+                        source={{ uri: album.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
+                        style={styles.listItemArt}
+                        contentFit="cover"
+                      />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{album.name}</RNText>
+                        <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {album.artistName} • {album.songs.length} {album.songs.length === 1 ? 'song' : 'songs'}
+                        </RNText>
+                      </View>
+                      <AppIcon ios="play.fill" android="play" size={18} color={colors.accent} />
                     </Pressable>
-                  </Pressable>
-                ))}
+                  ))
+                )}
               </View>
             )}
           </View>
@@ -682,14 +765,14 @@ export default function LibraryScreen() {
         </View>
       </Animated.ScrollView>
 
-      {/* FAB */}
+      {/* 🌟 FAB: Attached directly to Create Playlist Modal Trigger */}
       <Pressable
         style={({ pressed }) => [
           styles.fab,
           { backgroundColor: colors.accent },
           pressed && styles.pressed
         ]}
-        onPress={() => alert('Add to Library options')}
+        onPress={() => setIsCreateModalVisible(true)}
       >
         <AppIcon
           ios="plus"
@@ -777,7 +860,6 @@ export default function LibraryScreen() {
         onClose={() => setIsTrackOptionsVisible(false)}
         track={selectedTrack}
       />
-      <MiniPlayer />
     </View>
   );
 }
@@ -785,14 +867,7 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   contentContainer: { paddingTop: 0, paddingBottom: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 48 },
-  headerTitle: { fontSize: 24, fontWeight: '700' },
-  profileButton: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   pressed: { opacity: 0.7 },
-  storageLabel: { fontSize: 12, fontWeight: '500' },
-  storageFree: { fontSize: 12, fontWeight: '600' },
-  storageBarBg: { height: 4, borderRadius: 2, width: '100%', overflow: 'hidden' },
-  storageBarFill: { height: '100%', borderRadius: 2 },
   tabsContainer: { paddingHorizontal: 16, gap: 24, borderBottomWidth: 1, borderBottomColor: 'rgba(0, 0, 0, 0.05)' },
   tabButton: { paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabButtonText: { fontSize: 15, fontWeight: '600' },
@@ -801,60 +876,36 @@ const styles = StyleSheet.create({
   listItemArtRound: { width: 48, height: 48, borderRadius: 24 },
   folderIconWrapper: { width: 48, height: 48, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
   listItemTitle: { fontSize: 15, fontWeight: '600' },
-  listItemSubtitle: { fontSize: 12 },
-  moreButton: { width: 28, height: 28, justifyContent: 'center', alignItems: 'center' },
-  fab: { position: 'absolute', bottom: 84, right: 16, width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', elevation: 6, shadowColor: '#000000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 4, zIndex: 90 },
-
-  // Naye styles Permission aur Loading state ke liye
-  centerState: {
-    padding: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 150,
-  },
-  permissionButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
-  },
-  permissionButtonText: {
-    color: '#000', // Assuming accent is bright (like Spotify green), dark text works best. Change to white if needed.
-    fontWeight: '700',
-  },
-  quickAccessRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  quickAccessCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 12,
-  },
-  quickAccessIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  listItemSubtitle: { fontSize: 13 },
+  moreButton: { padding: 4 },
+  quickAccessRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16 },
+  quickAccessCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1 },
+  quickAccessIconWrapper: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  quickAccessTitle: { fontSize: 14, fontWeight: '700' },
+  quickAccessSubtitle: { fontSize: 12 },
+  centerState: { padding: 24, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginVertical: 12 },
+  permissionButton: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  permissionButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  fab: {
+    position: 'absolute',
+    bottom: 96,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 20,
   },
-  quickAccessTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  quickAccessSubtitle: {
-    fontSize: 11,
-  },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'center', alignItems: 'center' },
-  modalContent: { width: screenWidth - 64, padding: 24, borderRadius: 16, borderWidth: 1, gap: 16 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', maxWidth: 340, padding: 20, borderRadius: 16, borderWidth: 1, gap: 16 },
   modalTitle: { fontSize: 18, fontWeight: '700' },
-  modalInput: { height: 48, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 15 },
-  modalButtons: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end', marginTop: 4 },
-  modalButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  modalInput: { height: 44, borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, fontSize: 15 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  modalButton: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 }
 });

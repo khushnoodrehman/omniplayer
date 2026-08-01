@@ -5,11 +5,17 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 
+import { usePathname } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 const { width: screenWidth } = Dimensions.get('window');
 const miniPlayerWidth = screenWidth - 32;
 
 export default function MiniPlayer() {
   const colors = useTheme();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
+
   const {
     currentTrack,
     togglePlay,
@@ -19,7 +25,15 @@ export default function MiniPlayer() {
     isPlaying,
     position,
     duration,
+    isPlayerVisible,
   } = usePlaybackStore();
+
+  if (!currentTrack || isPlayerVisible) {
+    return null;
+  }
+
+  const isTabScreen = pathname === '/' || pathname === '/search' || pathname === '/library' || pathname === '/settings' || pathname.includes('(tabs)');
+  const bottomMargin = isTabScreen ? Math.max(insets.bottom + 58, 80) : Math.max(insets.bottom + 12, 18);
 
   const getCleanArtistName = (rawArtist: string) => {
     if (!rawArtist) return '';
@@ -37,14 +51,12 @@ export default function MiniPlayer() {
   const handlePress = () => {
     if (currentTrack) {
       setPlayerVisible(true);
-    } else {
-      alert('Select a track to start playing');
     }
   };
 
   return (
     <Pressable
-      style={styles.miniPlayerContainer}
+      style={[styles.miniPlayerContainer, { bottom: bottomMargin }]}
       onPress={handlePress}
     >
       <View style={[

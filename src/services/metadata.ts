@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 export interface LocalMetadata {
   title: string;
   artist: string;
+  album?: string;
   artwork?: string;
 }
 
@@ -31,6 +32,7 @@ export const extractLocalMetadata = async (fileUri: string): Promise<LocalMetada
         resolve({
           title: result.title || '',
           artist: result.artist || '',
+          album: result.album || '',
           artwork: result.artwork,
         });
       } catch (err) {

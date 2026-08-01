@@ -408,7 +408,6 @@ export default function SearchScreen() {
       {/* Animated Header */}
       <AppHeader
         title="Search"
-        onPressProfile={() => router.push('/settings')}
         headerTranslateY={headerTranslateY}
       />
 
@@ -669,7 +668,6 @@ export default function SearchScreen() {
         onClose={() => setIsTrackOptionsVisible(false)}
         track={selectedTrack}
       />
-      <MiniPlayer />
     </View>
   );
 }

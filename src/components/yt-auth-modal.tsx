@@ -4,6 +4,7 @@ import { WebView } from 'react-native-webview';
 import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
 // 🌟 THE FIX: Import the Native Cookie Manager
 import CookieManager from '@preeternal/react-native-cookie-manager';
 
@@ -37,8 +38,13 @@ export default function YTAuthModal({ isVisible, onClose, onSuccess }: YTAuthMod
 
                 console.log("[YTAuthModal] ✅ NATIVE Cookies Grabbed! Length:", cookieString.length);
 
-                // Cookies save karo aur modal band karo
+                // Cookies save karo, account info fetch karo aur modal band karo
                 await AsyncStorage.setItem('yt_cookies', cookieString);
+                try {
+                    await usePlaybackStore.getState().fetchAccountInfo();
+                } catch (accErr) {
+                    console.error("Account info fetch error after login:", accErr);
+                }
                 onSuccess();
                 onClose();
                 return true;

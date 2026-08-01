@@ -734,36 +734,64 @@ export class InnerTubeClient {
             const cookies = await AsyncStorage.getItem('yt_cookies');
             if (!cookies) return null;
 
-            // Fetch Home Feed using WEB_REMIX client to obtain the topbar metadata
-            const response = await this.postRequest('browse', {
-                browseId: 'FEmusic_home'
-            }, 'WEB_REMIX');
-
             let name = 'Connected User';
             let avatar = '';
 
-            const topbar = response.topbar || response.globalNavigation;
-            if (topbar) {
-                // Find account details inside topbar activeAccountHeaderRenderer
-                const accountRenderer = topbar.activeAccountHeaderRenderer || topbar.avatarHeaderRenderer;
-                if (accountRenderer) {
-                    name = accountRenderer.accountName?.runs?.[0]?.text || accountRenderer.displayName?.runs?.[0]?.text || name;
-                    const thumbs = accountRenderer.avatar?.thumbnails || [];
-                    if (thumbs.length > 0) {
-                        avatar = thumbs[thumbs.length - 1].url;
-                    }
-                } else {
-                    // Try alternative avatar locations
-                    const avatarRenderer = topbar.avatar || topbar.accountLinkButton?.avatar;
-                    if (avatarRenderer) {
-                        const thumbs = avatarRenderer.thumbnails || [];
+            // 1. Primary: Try account/account_menu endpoint (most accurate for Google account profile)
+            try {
+                const menuRes = await this.postRequest('account/account_menu', {}, 'WEB_REMIX');
+                const actions = menuRes.actions || [];
+                for (const act of actions) {
+                    const header = act.openPopupAction?.popup?.multiPageMenuRenderer?.header?.activeAccountHeaderRenderer;
+                    if (header) {
+                        const parsedName = header.accountName?.runs?.[0]?.text || header.email?.runs?.[0]?.text;
+                        if (parsedName) name = parsedName;
+                        const thumbs = header.accountPhoto?.thumbnails || [];
                         if (thumbs.length > 0) {
                             avatar = thumbs[thumbs.length - 1].url;
                         }
                     }
                 }
+            } catch (menuErr) {
+                console.warn('[InnerTubeClient] account_menu lookup warning:', menuErr);
             }
 
+            // 2. Secondary: Fallback to Home topbar metadata
+            if (!avatar || name === 'Connected User') {
+                const response = await this.postRequest('browse', {
+                    browseId: 'FEmusic_home'
+                }, 'WEB_REMIX');
+
+                const topbar = response.topbar || response.globalNavigation;
+                if (topbar) {
+                    const buttons = topbar.desktopTopbarRenderer?.topbarButtons || [];
+                    for (const btn of buttons) {
+                        const avatarRenderer = btn.topbarMenuButtonRenderer?.avatar;
+                        if (avatarRenderer?.thumbnails?.length > 0) {
+                            avatar = avatarRenderer.thumbnails[avatarRenderer.thumbnails.length - 1].url;
+                        }
+                        const accountHeader = btn.topbarMenuButtonRenderer?.menu?.multiPageMenuRenderer?.header?.activeAccountHeaderRenderer;
+                        if (accountHeader) {
+                            name = accountHeader.accountName?.runs?.[0]?.text || accountHeader.email?.runs?.[0]?.text || name;
+                            if (accountHeader.accountPhoto?.thumbnails?.length > 0) {
+                                avatar = accountHeader.accountPhoto.thumbnails[accountHeader.accountPhoto.thumbnails.length - 1].url;
+                            }
+                        }
+                    }
+                    if (!avatar) {
+                        const accountRenderer = topbar.activeAccountHeaderRenderer || topbar.avatarHeaderRenderer;
+                        if (accountRenderer) {
+                            name = accountRenderer.accountName?.runs?.[0]?.text || accountRenderer.displayName?.runs?.[0]?.text || name;
+                            const thumbs = accountRenderer.avatar?.thumbnails || [];
+                            if (thumbs.length > 0) {
+                                avatar = thumbs[thumbs.length - 1].url;
+                            }
+                        }
+                    }
+                }
+            }
+
+            console.log(`[InnerTubeClient] Account Info Fetched -> Name: "${name}", Avatar: "${avatar ? avatar.substring(0, 30) + '...' : 'none'}"`);
             return { name, avatar };
         } catch (err) {
             console.error('[InnerTubeClient] Error fetching account info:', err);
@@ -1094,142 +1122,104 @@ export class InnerTubeClient {
     }
 
     /**
-     * Retrieve Sync/Static Lyrics from LRCLIB or InnerTube fallback
+     * Client-side Lyrics Fetcher (LRCLIB -> YouTube Music fallback)
      */
-    public static async getLyrics(title: string, artist: string, videoId?: string): Promise<any> {
-        // Extract the primary artist name by splitting at typical separators (comma, ampersand, feat, etc.)
-        const getPrimary = (name: string): string => {
-            let clean = name.toLowerCase();
-            clean = clean.split('•')[0];
-            // Split by word boundaries for and, feat, featuring, or literal symbols , &
-            const parts = clean.split(/\s+(?:and|feat\.?|featuring)\s+|[,&]/i);
-            return parts[0].trim();
-        };
-
-        const artistParts = artist.split('•').map(p => p.trim());
-        let cleanArtist = artistParts[0] || '';
-        if ((cleanArtist.toLowerCase() === 'song' || cleanArtist.toLowerCase() === 'video') && artistParts.length > 1) {
-            cleanArtist = artistParts[1];
-        }
+    public static async getLyrics(title: string, artist: string, videoId?: string): Promise<{ type: 'synced' | 'static' | 'none'; lyrics: string; source?: string }> {
+        // Stage 1: Clean Artist
+        let cleanArtist = (artist || '').split('•')[0].trim();
         cleanArtist = cleanArtist
             .replace(/\s*-\s*topic/gi, '')
             .replace(/vevo$/gi, '')
+            .replace(/\s*official\s*/gi, '')
             .trim();
 
-        // Clean title if it contains artist name and hyphens
-        let searchTitle = title;
-        if (title.includes(' - ')) {
-            const parts = title.split(' - ').map(p => p.trim());
-            // Check if any part matches the artist name (case-insensitive)
-            const artistLower = cleanArtist.toLowerCase();
-            const nonArtistParts = parts.filter(p => {
-                const partLower = p.toLowerCase();
-                return !partLower.includes(artistLower) && !artistLower.includes(partLower);
-            });
+        // Extract primary artist (split by feat, and, comma, ampersand)
+        const primaryArtist = cleanArtist.split(/\s+(?:and|feat\.?|featuring)\s+|[,&]/i)[0].trim();
+
+        // Stage 2: Clean Title
+        let cleanTitle = title || '';
+        if (cleanTitle.includes(' - ')) {
+            const parts = cleanTitle.split(' - ').map(p => p.trim());
+            const nonArtistParts = parts.filter(p => !p.toLowerCase().includes(primaryArtist.toLowerCase()));
             if (nonArtistParts.length > 0) {
-                searchTitle = nonArtistParts.join(' - ');
-            } else {
-                // Fallback to the last part if all parts matched the artist (unlikely)
-                searchTitle = parts[parts.length - 1];
+                cleanTitle = nonArtistParts.join(' ');
             }
-        } else {
-            searchTitle = title;
         }
-
-        searchTitle = searchTitle
-            .replace(/\s*[\(\[][^)]*official[^)]*[\)\]]/gi, '')
-            .replace(/\s*[\(\[][^)]*video[^)]*[\)\]]/gi, '')
-            .replace(/\s*[\(\[][^)]*audio[^)]*[\)\]]/gi, '')
-            .replace(/\s*[\(\[][^)]*lyric[^)]*[\)\]]/gi, '')
-            .replace(/\s*[\(\[][^)]*hd[^)]*[\)\]]/gi, '')
-            .replace(/\s*[\(\[][^)]*mv[^)]*[\)\]]/gi, '')
-            .replace(/\s*[\(\[][^)]*remastered[^)]*[\)\]]/gi, '')
+        cleanTitle = cleanTitle
+            .replace(/\s*[\(\[][^)]*(?:official|video|audio|lyric|hd|mv|remastered|ft\.?|feat\.?)[^)]*[\)\]]/gi, '')
+            .replace(/ft\.?.*$/gi, '')
+            .replace(/feat\.?.*$/gi, '')
             .trim();
 
-        // Layer 1: LRCLIB (Direct from Client-Side)
+        console.log(`[InnerTubeClient] Sanitized Lyrics Search -> Title: "${cleanTitle}" | Artist: "${cleanArtist}" | Primary: "${primaryArtist}"`);
+
+        // Stage 3: Direct LRCLIB get with cleanTitle & cleanArtist
         try {
             if (cleanArtist) {
-                // 1. Try with the full artist string
-                let url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(searchTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
-                let response = await fetch(url);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib' };
-                    if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib' };
+                const url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib_direct' };
+                    if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib_direct' };
                 }
+            }
 
-                // 2. Try with the primary artist (e.g. split by comma, ampersand, feat., etc.)
-                const queryPrimary = getPrimary(cleanArtist);
-                if (queryPrimary && queryPrimary !== cleanArtist.toLowerCase()) {
-                    url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(searchTitle)}&artist_name=${encodeURIComponent(queryPrimary)}`;
-                    response = await fetch(url);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib' };
-                        if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib' };
+            // Stage 4: Direct LRCLIB get with cleanTitle & primaryArtist
+            if (primaryArtist && primaryArtist.toLowerCase() !== cleanArtist.toLowerCase()) {
+                const url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(primaryArtist)}`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib_primary' };
+                    if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib_primary' };
+                }
+            }
+
+            // Stage 5: Search LRCLIB with cleanTitle + primaryArtist
+            const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${cleanTitle} ${primaryArtist || cleanArtist}`.trim())}`;
+            const searchRes = await fetch(searchUrl);
+            if (searchRes.ok) {
+                const searchData = await searchRes.json();
+                if (Array.isArray(searchData) && searchData.length > 0) {
+                    const match = searchData.find((item: any) => item.syncedLyrics || item.plainLyrics);
+                    if (match) {
+                        if (match.syncedLyrics) return { type: 'synced', lyrics: match.syncedLyrics, source: 'lrclib_search' };
+                        if (match.plainLyrics) return { type: 'static', lyrics: match.plainLyrics, source: 'lrclib_search' };
                     }
                 }
             }
 
-            // Try search in LRCLIB
-            const queryPrimary = getPrimary(cleanArtist);
-            const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${searchTitle} ${queryPrimary || cleanArtist}`.trim())}`;
-            const searchRes = await fetch(searchUrl);
-            if (searchRes.ok) {
-                const searchData = await searchRes.json();
-                if (searchData && searchData.length > 0) {
-                    const best = searchData[0];
-                    const bestTitle = (best.trackName || '').toLowerCase();
-                    const bestArtist = (best.artistName || '').toLowerCase();
-                    const queryTitle = searchTitle.toLowerCase();
-                    const queryArtist = cleanArtist.toLowerCase();
-                    const bestPrimary = getPrimary(best.artistName || '');
-
-                    // Title aur Artist ka loose matching validation check
-                    const titleMatches = bestTitle.includes(queryTitle) || queryTitle.includes(bestTitle);
-                    const artistMatches = !queryArtist || 
-                        bestArtist.includes(queryArtist) || 
-                        queryArtist.includes(bestArtist) ||
-                        (queryPrimary && bestArtist.includes(queryPrimary)) ||
-                        (bestPrimary && queryArtist.includes(bestPrimary));
-
-                    if (titleMatches && artistMatches) {
-                        if (best.syncedLyrics) return { type: 'synced', lyrics: best.syncedLyrics, source: 'lrclib_search' };
-                        if (best.plainLyrics) return { type: 'static', lyrics: best.plainLyrics, source: 'lrclib_search' };
-                    } else {
-                        console.log(`[InnerTubeClient] Mismatched LRCLIB search result bypassed: "${best.trackName}" by "${best.artistName}" for query "${searchTitle}"`);
+            // Stage 6: Fallback Search LRCLIB with cleanTitle only
+            const searchTitleOnlyUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle.trim())}`;
+            const searchTitleOnlyRes = await fetch(searchTitleOnlyUrl);
+            if (searchTitleOnlyRes.ok) {
+                const searchTitleOnlyData = await searchTitleOnlyRes.json();
+                if (Array.isArray(searchTitleOnlyData) && searchTitleOnlyData.length > 0) {
+                    const match = searchTitleOnlyData.find((item: any) => item.syncedLyrics || item.plainLyrics);
+                    if (match) {
+                        if (match.syncedLyrics) return { type: 'synced', lyrics: match.syncedLyrics, source: 'lrclib_title_search' };
+                        if (match.plainLyrics) return { type: 'static', lyrics: match.plainLyrics, source: 'lrclib_title_search' };
                     }
                 }
             }
         } catch (lrclibErr) {
-            console.warn('[InnerTubeClient] LRCLIB lyrics lookup failed, trying YouTube fallback...', lrclibErr);
+            console.warn('[InnerTubeClient] LRCLIB lyrics lookup error:', lrclibErr);
         }
 
-        // Layer 2: YouTube Music Fallback via `/next` and `/browse`
+        // Stage 7: YouTube Music Fallback via `/next` and `/browse`
         if (videoId) {
             try {
-                // Call `/next` to get watch playlist, which contains the lyrics browse ID
-                const nextResponse = await this.postRequest('next', {
-                    videoId
-                });
-
+                const nextResponse = await this.postRequest('next', { videoId }, 'WEB_REMIX');
                 const tabs = nextResponse.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer?.watchNextTabbedResultsRenderer?.tabs;
                 const lyricsTab = tabs?.find((t: any) => t.tabRenderer?.title?.runs?.[0]?.text?.toLowerCase() === 'lyrics');
                 const lyricsBrowseId = lyricsTab?.tabRenderer?.endpoint?.browseEndpoint?.browseId;
 
                 if (lyricsBrowseId) {
-                    // Call `/browse` with the lyrics browse ID
-                    const browseResponse = await this.postRequest('browse', {
-                        browseId: lyricsBrowseId
-                    });
-
+                    const browseResponse = await this.postRequest('browse', { browseId: lyricsBrowseId }, 'WEB_REMIX');
                     const lyricsText = browseResponse.contents?.sectionListRenderer?.contents?.[0]?.musicLyricsRenderer?.description?.runs?.[0]?.text;
                     if (lyricsText) {
-                        return {
-                            type: 'static',
-                            lyrics: lyricsText,
-                            source: 'youtube'
-                        };
+                        return { type: 'static', lyrics: lyricsText, source: 'youtube' };
                     }
                 }
             } catch (ytLyricsErr) {

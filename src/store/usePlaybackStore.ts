@@ -129,6 +129,9 @@ interface PlaybackState {
 
 const pendingResolutions = new Map<string, Promise<string | undefined>>();
 
+// Global In-Memory Lyrics Cache Map
+const lyricsCacheMap = new Map<string, { lyrics: ParsedLyric[]; error: string | null }>();
+
 export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     currentTrack: null,
     queue: [],
@@ -294,11 +297,28 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     fetchLyricsForTrack: async (track: Track) => {
-        if (get().loadedLyricsTrackId === track.id) {
-            console.log(`[PlaybackStore] Lyrics already loaded for: ${track.title}`);
+        if (!track || !track.id) return;
+
+        // 1. Instant Cache Hit Check (<1ms return)
+        const cached = lyricsCacheMap.get(track.id);
+        if (cached) {
+            console.log(`[PlaybackStore] Instant <1ms lyrics cache hit for: "${track.title}" (${cached.lyrics.length} lines)`);
+            set({
+                currentLyrics: cached.lyrics,
+                lyricsError: cached.error,
+                isLyricsLoading: false,
+                loadedLyricsTrackId: track.id
+            });
             return;
         }
+
+        if (get().loadedLyricsTrackId === track.id) {
+            console.log(`[PlaybackStore] Lyrics already active for: ${track.title}`);
+            return;
+        }
+
         set({ isLyricsLoading: true, lyricsError: null, currentLyrics: [], loadedLyricsTrackId: null });
+
         try {
             const parseLRC = (lrcText: string): ParsedLyric[] => {
                 const lines = lrcText.split('\n');
@@ -315,51 +335,70 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 return parsed;
             };
 
-            // 1. Check local .lrc file alongside song file if track is local
-            const isLocal = track.sourceType === 'local' || (typeof track.uri === 'string' && track.uri.startsWith('file://'));
-            if (isLocal && track.uri) {
+            const storeInCacheAndSet = (lyrics: ParsedLyric[], error: string | null) => {
+                lyricsCacheMap.set(track.id, { lyrics, error });
+                set({
+                    currentLyrics: lyrics,
+                    lyricsError: error,
+                    isLyricsLoading: false,
+                    loadedLyricsTrackId: track.id
+                });
+            };
+
+            // 2. Determine Track Origin Strictly
+            const trackUri = typeof track.uri === 'string' ? track.uri : '';
+            const isHttpUrl = trackUri.startsWith('http://') || trackUri.startsWith('https://');
+            const isFileUri = trackUri.startsWith('file://');
+            const isLocalTrack = isFileUri || track.sourceType === 'local';
+            const isOnlineTrack = isHttpUrl || track.sourceType === 'youtube' || (!isLocalTrack && track.id && track.id.length === 11);
+
+            // 3. LOCAL TRACK ONLY: Execute .lrc FileSystem check
+            if (!isOnlineTrack && isLocalTrack && isFileUri) {
                 try {
-                    const lrcPath = track.uri.replace(/\.[^/.]+$/, '') + '.lrc';
-                    console.log(`[PlaybackStore] Checking for local .lrc file at: ${lrcPath}`);
+                    const lrcPath = trackUri.replace(/\.[^/.]+$/, '') + '.lrc';
+                    console.log(`[PlaybackStore] Local track detected. Checking for .lrc file at: ${lrcPath}`);
                     const fileInfo = await FileSystem.getInfoAsync(lrcPath);
-                    if (fileInfo.exists) {
+                    if (fileInfo && fileInfo.exists) {
                         const lrcContent = await FileSystem.readAsStringAsync(lrcPath, { encoding: FileSystem.EncodingType.UTF8 });
                         if (lrcContent && lrcContent.trim().length > 0) {
                             const parsedLyrics = parseLRC(lrcContent);
                             if (parsedLyrics.length > 0) {
-                                console.log(`[PlaybackStore] Successfully loaded local .lrc synced lyrics (${parsedLyrics.length} lines)`);
-                                set({ currentLyrics: parsedLyrics, isLyricsLoading: false, loadedLyricsTrackId: track.id });
+                                console.log(`[PlaybackStore] Loaded local .lrc synced lyrics (${parsedLyrics.length} lines)`);
+                                storeInCacheAndSet(parsedLyrics, null);
                                 return;
                             } else {
-                                console.log(`[PlaybackStore] Loaded local .lrc as static text`);
-                                set({ currentLyrics: [{ time: 0, text: lrcContent }], isLyricsLoading: false, loadedLyricsTrackId: track.id });
+                                console.log(`[PlaybackStore] Loaded local .lrc static text`);
+                                storeInCacheAndSet([{ time: 0, text: lrcContent }], null);
                                 return;
                             }
                         }
                     }
                 } catch (lrcErr) {
-                    console.warn('[PlaybackStore] Error reading local .lrc file:', lrcErr);
+                    console.warn('[PlaybackStore] Error checking local .lrc:', lrcErr);
                 }
+            } else {
+                console.log(`[PlaybackStore] Online track detected (URI: "${trackUri || 'YouTube'}"). Bypassing local .lrc FileSystem check.`);
             }
 
-            // 2. Check downloads database for offline cached lyrics
+            // 4. Check downloads database for offline cached lyrics
             try {
                 const download = await getDownloadDB(track.id);
                 if (download && download.lyrics && download.lyricsType && download.lyricsType !== 'none') {
                     console.log(`[PlaybackStore] Using offline cached lyrics for: ${track.title}`);
                     if (download.lyricsType === 'synced') {
-                        set({ currentLyrics: parseLRC(download.lyrics), isLyricsLoading: false, loadedLyricsTrackId: track.id });
+                        storeInCacheAndSet(parseLRC(download.lyrics), null);
                     } else {
-                        set({ currentLyrics: [{ time: 0, text: download.lyrics }], isLyricsLoading: false, loadedLyricsTrackId: track.id });
+                        storeInCacheAndSet([{ time: 0, text: download.lyrics }], null);
                     }
                     return;
                 }
             } catch (dbErr) {
-                console.error("[PlaybackStore] Error checking downloads DB for lyrics:", dbErr);
+                console.error("[PlaybackStore] DB cached lyrics check error:", dbErr);
             }
 
-            let sendTitle = track.title;
-            let sendArtist = track.artist;
+            // 5. ONLINE TRACK / FALLBACK: Direct execution of 5-stage online lyrics API fetcher
+            let sendTitle = track.title || '';
+            let sendArtist = track.artist || '';
 
             if (track.sourceType === 'local') {
                 if (track.title.includes(' - ')) {
@@ -370,45 +409,34 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     sendArtist = sendArtist.replace(/^\d+\.?\s*/, '');
                 } else {
                     sendTitle = track.title.replace(/\.(mp3|flac|m4a|ogg)$/i, '');
-                    sendArtist = '';
+                    if (!sendArtist && track.artist) {
+                        sendArtist = track.artist;
+                    }
                 }
             }
 
-            const targetId = track.sourceType === 'youtube' ? track.id : '';
+            const targetId = track.sourceType === 'youtube' || (track.id && track.id.length === 11) ? track.id : '';
 
-            console.log(`[Zustand] Outgoing Lyrics Request -> Title: "${sendTitle}" | Artist: "${sendArtist}" | VideoId: "${targetId}"`);
+            console.log(`[PlaybackStore] Executing Online Lyrics Fetcher -> Title: "${sendTitle}" | Artist: "${sendArtist}" | VideoId: "${targetId}"`);
 
             const data = await InnerTubeClient.getLyrics(sendTitle, sendArtist, targetId);
 
-            console.log(`[Zustand] Lyrics Response -> Type: "${data.type}" | Source: "${data.source || 'youtube'}"`);
+            console.log(`[PlaybackStore] Lyrics API response -> Type: "${data.type}" | Source: "${data.source || 'none'}"`);
 
-            if (data.type === 'synced') {
-                const parseLRC = (lrcText: string): ParsedLyric[] => {
-                    const lines = lrcText.split('\n');
-                    const parsed: ParsedLyric[] = [];
-                    const timeRegex = /\[(\d{2}):(\d{2}\.\d{2,3})\]/;
-                    lines.forEach(line => {
-                        const match = line.match(timeRegex);
-                        if (match) {
-                            const min = parseInt(match[1], 10);
-                            const sec = parseFloat(match[2]);
-                            parsed.push({ time: (min * 60) + sec, text: line.replace(timeRegex, '').trim() });
-                        }
-                    });
-                    return parsed;
-                };
+            if (data.type === 'synced' && data.lyrics) {
                 const parsedLyrics = parseLRC(data.lyrics);
-                console.log(`[Zustand] Parsed SYNCED lyrics successfully: ${parsedLyrics.length} lines`);
-                set({ currentLyrics: parsedLyrics, loadedLyricsTrackId: track.id });
-            } else if (data.type === 'static') {
-                console.log(`[Zustand] Loaded STATIC lyrics successfully (1 static block)`);
-                set({ currentLyrics: [{ time: 0, text: data.lyrics }], loadedLyricsTrackId: track.id });
+                if (parsedLyrics.length > 0) {
+                    storeInCacheAndSet(parsedLyrics, null);
+                } else {
+                    storeInCacheAndSet([{ time: 0, text: data.lyrics }], null);
+                }
+            } else if (data.type === 'static' && data.lyrics) {
+                storeInCacheAndSet([{ time: 0, text: data.lyrics }], null);
             } else {
-                console.log(`[Zustand] Lyrics NOT available for this track`);
-                set({ lyricsError: 'Lyrics not available', loadedLyricsTrackId: track.id });
+                storeInCacheAndSet([], 'Lyrics not available');
             }
         } catch (err) {
-            console.error(`[Zustand] Error loading lyrics:`, err);
+            console.error(`[PlaybackStore] Error loading lyrics:`, err);
             set({ lyricsError: 'Failed to load lyrics', loadedLyricsTrackId: null });
         } finally {
             set({ isLyricsLoading: false });
@@ -921,6 +949,17 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                         }
                     } catch (lyrErr) {
                         console.error("Error fetching lyrics:", lyrErr);
+                    }
+
+                    // Write .lrc sidecar file alongside downloaded track
+                    if (localUri && lyrics && lyrics.trim().length > 0) {
+                        try {
+                            const lrcPath = localUri.replace(/\.[^/.]+$/, '') + '.lrc';
+                            await FileSystem.writeAsStringAsync(lrcPath, lyrics, { encoding: FileSystem.EncodingType.UTF8 });
+                            console.log(`[PlaybackStore] Saved downloaded .lrc sidecar file to: ${lrcPath}`);
+                        } catch (lrcWriteErr) {
+                            console.warn('[PlaybackStore] Failed to write .lrc sidecar file:', lrcWriteErr);
+                        }
                     }
 
                     // Save to downloads table

@@ -1,22 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text as RNText, ScrollView, Pressable, Dimensions, Alert, Switch, Platform, Modal } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as WebBrowser from 'expo-web-browser';
-import { useTheme } from '@/hooks/use-theme';
-import { AppIcon } from '@/components/ui/app-icon';
-import { usePlaybackStore } from '@/store/usePlaybackStore';
-import YTAuthModal from '@/components/yt-auth-modal';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
-import MiniPlayer from '@/components/mini-player';
-import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { AppHeader } from '@/components/app-header';
+import { AppIcon } from '@/components/ui/app-icon';
+import YTAuthModal from '@/components/yt-auth-modal';
+import { useTheme } from '@/hooks/use-theme';
+import { usePlaybackStore } from '@/store/usePlaybackStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect, useState } from 'react';
+import { Alert, Dimensions, Modal, Platform, Pressable, Text as RNText, StyleSheet, Switch, View } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: screenWidth } = Dimensions.get('window');
 
-import { useThemeStore, ThemeMode, AccentColorName } from '@/store/useThemeStore';
+import { AccentColorName, ThemeMode, useThemeStore } from '@/store/useThemeStore';
 
 interface SettingRowProps {
   iosIcon: string;
@@ -332,11 +330,10 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      
+
       {/* Animated Header */}
       <AppHeader
         title="Settings"
-        onPressProfile={() => Alert.alert("Account Info", accountInfo?.name || "Omniplayer User")}
         headerTranslateY={headerTranslateY}
       />
 
@@ -347,20 +344,6 @@ export default function SettingsScreen() {
         scrollEventThrottle={16}
       >
         <View style={{ gap: 24 }}>
-
-          {/* Account & Integrations */}
-          <View style={{ gap: 12, paddingHorizontal: 16 }}>
-            <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account & Integrations</RNText>
-            <View style={{ gap: 8 }}>
-              <SettingRow
-                iosIcon="play.rectangle.fill"
-                androidIcon="logo-youtube"
-                title="YouTube Music"
-                value={isYTConnected ? "Connected" : "Not Connected"}
-                onPress={handlePressYT}
-              />
-            </View>
-          </View>
 
           {/* Playback Section */}
           <View style={{ gap: 12, paddingHorizontal: 16 }}>
@@ -494,7 +477,7 @@ export default function SettingsScreen() {
       >
         <Pressable style={styles.modalOverlay} onPress={() => setActiveModal(null)}>
           <View style={[styles.modalCard, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}>
-            
+
             {activeModal === 'quality' && (
               <View style={{ gap: 12 }}>
                 <RNText style={[styles.modalHeader, { color: colors.text }]}>Select Audio Quality</RNText>
@@ -609,7 +592,6 @@ export default function SettingsScreen() {
         onClose={() => setIsAuthModalVisible(false)}
         onSuccess={() => setIsYTConnected(true)}
       />
-      <MiniPlayer />
     </View>
   );
 }

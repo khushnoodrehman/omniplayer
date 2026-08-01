@@ -10,6 +10,7 @@ import { getPlaylistTracksDB, getPlaylistsDB, deletePlaylistDB, renamePlaylistDB
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import TrackOptionsSheet from '@/components/track-options-sheet';
+import { PlaylistSkeleton } from '@/components/playlist-skeleton';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -186,11 +187,7 @@ export default function PlaylistScreen() {
     };
 
     if (isLoading) {
-        return (
-            <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.accent} />
-            </View>
-        );
+        return <PlaylistSkeleton />;
     }
 
     if (!playlist) {

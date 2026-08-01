@@ -6,6 +6,7 @@ import TrackPlayer from '@rntp/player';
 import { Colors } from '@/constants/theme';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import NowPlayingModal from '@/components/now-playing-modal';
+import MiniPlayer from '@/components/mini-player';
 
 import { initDB } from '@/services/db';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
@@ -76,6 +77,7 @@ export default function TabLayout() {
         <Stack.Screen name="artist" />
         <Stack.Screen name="download-manager" />
       </Stack>
+      <MiniPlayer />
       <NowPlayingModal />
     </ThemeProvider>
   );

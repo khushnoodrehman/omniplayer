@@ -319,6 +319,19 @@ export const downloadTrackFile = async (
                 to: finalFileUri
             });
 
+            // Write .lrc sidecar file alongside downloaded audio file
+            if (rawLrcText || lyricsText) {
+                try {
+                    const lrcFilePath = finalFileUri.replace(/\.[^/.]+$/, '') + '.lrc';
+                    await FileSystem.writeAsStringAsync(lrcFilePath, rawLrcText || lyricsText, {
+                        encoding: FileSystem.EncodingType.UTF8
+                    });
+                    console.log(`[Downloader] Fast Mode - Saved .lrc sidecar file to: ${lrcFilePath}`);
+                } catch (lrcWriteErr) {
+                    console.warn('[Downloader] Failed writing .lrc file in Fast Mode:', lrcWriteErr);
+                }
+            }
+
             console.log(`[Downloader] Fast Mode - Saved to: ${finalFileUri}`);
             if (Platform.OS === 'android') {
                 notifee.displayNotification({

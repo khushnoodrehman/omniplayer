@@ -13,6 +13,7 @@ import MiniPlayer from '@/components/mini-player';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import { HomeSkeleton } from '@/components/home-skeleton';
 import { AppHeader } from '@/components/app-header';
+import * as Network from 'expo-network';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -100,8 +101,30 @@ export default function HomeScreen() {
     homeDataRef.current = homeData;
   }, [homeData]);
 
+  const [isOffline, setIsOffline] = useState(false);
+
+  // Network Connectivity Check
+  const checkNetwork = useCallback(async () => {
+    try {
+      const netState = await Network.getNetworkStateAsync();
+      const offline = !netState.isConnected || netState.isInternetReachable === false;
+      setIsOffline(offline);
+      return !offline;
+    } catch {
+      setIsOffline(false);
+      return true;
+    }
+  }, []);
+
   // Fetch Data Function
   const performFetch = useCallback(async (forceRefresh = false) => {
+    const online = await checkNetwork();
+    if (!online) {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     try {
       const showSpeedDialVal = await AsyncStorage.getItem('settings_show_speed_dial');
       if (showSpeedDialVal !== null) {
@@ -136,13 +159,18 @@ export default function HomeScreen() {
       });
       setContinuationToken(data.continuationToken || null);
       fetchAccountInfo();
+      setIsOffline(false);
     } catch (error) {
       console.error("Home Data Fetch Error:", error);
+      const onlineNow = await checkNetwork();
+      if (!onlineNow) {
+        setIsOffline(true);
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [fetchAccountInfo]);
+  }, [fetchAccountInfo, checkNetwork]);
 
   // Pull to refresh handler
   const handleRefresh = useCallback(() => {
@@ -361,12 +389,45 @@ export default function HomeScreen() {
     }
   });
 
+  if (isOffline) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <AppHeader
+          title="Omniplayer"
+          headerTranslateY={headerTranslateY}
+        />
+        <View style={styles.offlineContainer}>
+          <View style={[styles.offlineIconWrapper, { backgroundColor: colors.accentLight }]}>
+            <AppIcon ios="wifi.slash" android="wifi-outline" size={48} color={colors.accent} />
+          </View>
+          <RNText style={[styles.offlineTitle, { color: colors.text }]}>No Internet Connection</RNText>
+          <RNText style={[styles.offlineSubtitle, { color: colors.textSecondary }]}>
+            You are currently offline. Connect to Wi-Fi or cellular data to stream music, or listen to your local downloads.
+          </RNText>
+          <View style={{ gap: 12, marginTop: 16, width: '100%', maxWidth: 280, alignItems: 'center' }}>
+            <Pressable
+              onPress={() => router.push('/library')}
+              style={({ pressed }) => [styles.offlineButtonPrimary, { backgroundColor: colors.accent }, pressed && styles.pressed]}
+            >
+              <RNText style={{ color: '#ffffff', fontWeight: '700', fontSize: 15 }}>Go to Library & Downloads</RNText>
+            </Pressable>
+            <Pressable
+              onPress={handleRefresh}
+              style={({ pressed }) => [styles.offlineButtonSecondary, { borderColor: colors.cardBorder }, pressed && styles.pressed]}
+            >
+              <RNText style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}>Retry Connection</RNText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <AppHeader
           title="Omniplayer"
-          onPressProfile={() => setIsProfileModalVisible(true)}
           headerTranslateY={headerTranslateY}
         />
         <HomeSkeleton />
@@ -380,7 +441,6 @@ export default function HomeScreen() {
       {/* Animated Header */}
       <AppHeader
         title="Omniplayer"
-        onPressProfile={() => setIsProfileModalVisible(true)}
         headerTranslateY={headerTranslateY}
       />
 
@@ -797,7 +857,6 @@ export default function HomeScreen() {
           </View>
         </Pressable>
       </Modal>
-      <MiniPlayer />
     </View>
   );
 }
@@ -995,4 +1054,44 @@ const styles = StyleSheet.create({
   modalButtons: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end', marginTop: 4 },
   modalButton: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' },
+  offlineContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  offlineIconWrapper: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  offlineTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  offlineSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  offlineButtonPrimary: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offlineButtonSecondary: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
