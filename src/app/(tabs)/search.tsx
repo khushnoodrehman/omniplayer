@@ -121,18 +121,18 @@ const LocalAudioItem = ({ title, subtitle, onPress, onOptionsPress }: LocalAudio
   );
 };
 
-// --- YOUTUBE ITEM ---
+// --- YOUTUBE ITEM (Loading State Support Ke Sath) ---
 interface YouTubeItemProps {
   title: string;
   subtitle: string;
   imageUri: string;
   onPress: () => void;
-  onDownload?: () => void;
   isLoading?: boolean;
   isLiked?: boolean;
   onLike?: () => void;
+  onDownload?: () => void;
 }
-const YouTubeItem = ({ title, subtitle, imageUri, onPress, onDownload, isLoading, isLiked, onLike }: YouTubeItemProps) => {
+const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isLiked, onLike, onDownload }: YouTubeItemProps) => {
   try {
     const colors = useTheme();
     return (
@@ -181,23 +181,26 @@ export default function SearchScreen() {
   const playTrack = usePlaybackStore((state) => state.playTrack);
   const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
   const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
+  const downloadTrack = usePlaybackStore((state) => state.downloadTrack);
   const router = useRouter();
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
 
+  // Download Sheet State
   const [isDownloadSheetVisible, setIsDownloadSheetVisible] = useState(false);
-  const [downloadSheetTrack, setDownloadSheetTrack] = useState<Track | null>(null);
+  const [downloadTargetTrack, setDownloadTargetTrack] = useState<Track | null>(null);
 
-  const handleOpenDownloadSheet = (item: any) => {
-    const trackToDownload: Track = {
-      id: item.id,
-      title: safeString(item.title, 'Unknown Title'),
+  const handleOpenDownload = (item: any) => {
+    if (!item) return;
+    const formattedTrack: Track = {
+      id: safeString(item.id),
+      title: safeString(item.title, 'Unknown Song'),
       artist: safeString(item.artist, 'Unknown Artist'),
       image: safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
       duration: item.duration || 0,
       sourceType: 'youtube'
     };
-    setDownloadSheetTrack(trackToDownload);
+    setDownloadTargetTrack(formattedTrack);
     setIsDownloadSheetVisible(true);
   };
 
@@ -604,6 +607,12 @@ export default function SearchScreen() {
                                   color={favoriteTracks.includes(topResult.id) ? colors.accent : colors.textSecondary}
                                 />
                               </Pressable>
+                              <Pressable
+                                onPress={() => handleOpenDownload(topResult)}
+                                style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}
+                              >
+                                <AppIcon ios="arrow.down.to.line" android="download-outline" size={20} color={colors.textSecondary} />
+                              </Pressable>
                             </View>
                           </View>
                         </View>
@@ -651,7 +660,6 @@ export default function SearchScreen() {
                                   subtitle={`${safeString(item.artist, 'Unknown Artist')} • ${formatDuration(item.duration)}`}
                                   imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
                                   onPress={() => handlePlayYouTubeTrack(item)}
-                                  onDownload={() => handleOpenDownloadSheet(item)}
                                   isLoading={loadingTrackId === item.id}
                                   isLiked={favoriteTracks.includes(item.id)}
                                   onLike={() => toggleFavorite({
@@ -662,6 +670,7 @@ export default function SearchScreen() {
                                     duration: item.duration || 0,
                                     sourceType: 'youtube'
                                   })}
+                                  onDownload={() => handleOpenDownload(item)}
                                 />
                               );
                             } catch (err) {
@@ -684,16 +693,22 @@ export default function SearchScreen() {
         </View>
       </Animated.ScrollView>
 
-      <DownloadSheet
-        isVisible={isDownloadSheetVisible}
-        onClose={() => setIsDownloadSheetVisible(false)}
-        track={downloadSheetTrack}
-      />
-
       <TrackOptionsSheet
         isVisible={isTrackOptionsVisible}
         onClose={() => setIsTrackOptionsVisible(false)}
         track={selectedTrack}
+      />
+
+      {/* Download Options Bottom Sheet */}
+      <DownloadSheet
+        isVisible={isDownloadSheetVisible}
+        onClose={() => setIsDownloadSheetVisible(false)}
+        track={downloadTargetTrack}
+        onStartDownload={(options) => {
+          if (downloadTargetTrack) {
+            downloadTrack(downloadTargetTrack, options);
+          }
+        }}
       />
     </View>
   );

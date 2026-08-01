@@ -10,7 +10,7 @@ interface DownloadSheetProps {
     track?: Track | null;
     playlistName?: string;
     tracksCount?: number;
-    onStartDownload?: (options: DownloadOptions) => void;
+    onStartDownload: (options: DownloadOptions) => void;
 }
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -24,7 +24,6 @@ export default function DownloadSheet({
     onStartDownload
 }: DownloadSheetProps) {
     const colors = useTheme();
-    const downloadTrack = usePlaybackStore((state) => state.downloadTrack);
 
     const {
         downloadMode,
@@ -49,17 +48,12 @@ export default function DownloadSheet({
     };
 
     const handleDownload = () => {
-        const options: DownloadOptions = {
+        onStartDownload({
             downloadMode,
             downloadFormat,
             downloadQuality,
             exportSeparateLrcFile
-        };
-        if (onStartDownload) {
-            onStartDownload(options);
-        } else if (track) {
-            downloadTrack(track, options);
-        }
+        });
         onClose();
     };
 
