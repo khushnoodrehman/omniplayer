@@ -399,18 +399,11 @@ export default function SettingsScreen() {
                 androidIcon="folder-open-outline"
                 title="Music Folder Access (SAF)"
                 value={
-                  lrcExportDirectoryUri 
-                    ? (lrcExportDirectoryUri.includes('%3A') ? `Folder: ${decodeURIComponent(lrcExportDirectoryUri.split('%3A').pop() || 'Music')}` : 'Permission Granted') 
+                  lrcExportDirectoryUri
+                    ? (lrcExportDirectoryUri.includes('%3A') ? `Folder: ${decodeURIComponent(lrcExportDirectoryUri.split('%3A').pop() || 'Music')}` : 'Permission Granted')
                     : 'Tap to Select Folder'
                 }
                 onPress={handleSelectMusicFolderPermission}
-              />
-              <SettingRow
-                iosIcon="folder.badge.gearshape"
-                androidIcon="folder-open"
-                title="Downloads Location"
-                value="View Directory"
-                onPress={() => Alert.alert("Downloads Location", downloadLocation)}
               />
               <SettingRow
                 iosIcon="arrow.down.circle"

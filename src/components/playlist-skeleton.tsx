@@ -49,7 +49,7 @@ export function PlaylistSkeleton() {
 
           {/* Tracklist Rows */}
           <View style={styles.tracklistSection}>
-            {Array.from({ length: 8 }).map((_, idx) => (
+            {Array.from({ length: 5 }).map((_, idx) => (
               <View
                 key={`track-skel-${idx}`}
                 style={[styles.trackRow, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}

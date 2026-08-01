@@ -187,7 +187,12 @@ export default function PlaylistScreen() {
     };
 
     if (isLoading) {
-        return <PlaylistSkeleton />;
+        return (
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <Stack.Screen options={{ headerShown: false }} />
+                <PlaylistSkeleton />
+            </View>
+        );
     }
 
     if (!playlist) {
