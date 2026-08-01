@@ -1153,53 +1153,90 @@ export class InnerTubeClient {
 
         console.log(`[InnerTubeClient] Sanitized Lyrics Search -> Title: "${cleanTitle}" | Artist: "${cleanArtist}" | Primary: "${primaryArtist}"`);
 
+        const fetchHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json'
+        };
+
         // Stage 3: Direct LRCLIB get with cleanTitle & cleanArtist
         try {
             if (cleanArtist) {
                 const url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(cleanArtist)}`;
-                const res = await fetch(url);
+                console.log(`[InnerTubeClient] Stage 3 LRCLIB Get: ${url}`);
+                const res = await fetch(url, { headers: fetchHeaders });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib_direct' };
-                    if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib_direct' };
+                    if (data.syncedLyrics) {
+                        console.log(`[InnerTubeClient] ✅ Stage 3 Synced Lyrics Hit! (${data.syncedLyrics.split('\n').length} lines)`);
+                        return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib_direct' };
+                    }
+                    if (data.plainLyrics) {
+                        console.log(`[InnerTubeClient] ✅ Stage 3 Plain Lyrics Hit!`);
+                        return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib_direct' };
+                    }
+                } else {
+                    console.log(`[InnerTubeClient] Stage 3 LRCLIB Get returned status: ${res.status}`);
                 }
             }
 
             // Stage 4: Direct LRCLIB get with cleanTitle & primaryArtist
             if (primaryArtist && primaryArtist.toLowerCase() !== cleanArtist.toLowerCase()) {
                 const url = `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTitle)}&artist_name=${encodeURIComponent(primaryArtist)}`;
-                const res = await fetch(url);
+                console.log(`[InnerTubeClient] Stage 4 LRCLIB Get: ${url}`);
+                const res = await fetch(url, { headers: fetchHeaders });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.syncedLyrics) return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib_primary' };
-                    if (data.plainLyrics) return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib_primary' };
+                    if (data.syncedLyrics) {
+                        console.log(`[InnerTubeClient] ✅ Stage 4 Synced Lyrics Hit! (${data.syncedLyrics.split('\n').length} lines)`);
+                        return { type: 'synced', lyrics: data.syncedLyrics, source: 'lrclib_primary' };
+                    }
+                    if (data.plainLyrics) {
+                        console.log(`[InnerTubeClient] ✅ Stage 4 Plain Lyrics Hit!`);
+                        return { type: 'static', lyrics: data.plainLyrics, source: 'lrclib_primary' };
+                    }
+                } else {
+                    console.log(`[InnerTubeClient] Stage 4 LRCLIB Get returned status: ${res.status}`);
                 }
             }
 
             // Stage 5: Search LRCLIB with cleanTitle + primaryArtist
             const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(`${cleanTitle} ${primaryArtist || cleanArtist}`.trim())}`;
-            const searchRes = await fetch(searchUrl);
+            console.log(`[InnerTubeClient] Stage 5 LRCLIB Search: ${searchUrl}`);
+            const searchRes = await fetch(searchUrl, { headers: fetchHeaders });
             if (searchRes.ok) {
                 const searchData = await searchRes.json();
                 if (Array.isArray(searchData) && searchData.length > 0) {
                     const match = searchData.find((item: any) => item.syncedLyrics || item.plainLyrics);
                     if (match) {
-                        if (match.syncedLyrics) return { type: 'synced', lyrics: match.syncedLyrics, source: 'lrclib_search' };
-                        if (match.plainLyrics) return { type: 'static', lyrics: match.plainLyrics, source: 'lrclib_search' };
+                        if (match.syncedLyrics) {
+                            console.log(`[InnerTubeClient] ✅ Stage 5 Synced Search Hit! ("${match.trackName}" by "${match.artistName}")`);
+                            return { type: 'synced', lyrics: match.syncedLyrics, source: 'lrclib_search' };
+                        }
+                        if (match.plainLyrics) {
+                            console.log(`[InnerTubeClient] ✅ Stage 5 Plain Search Hit!`);
+                            return { type: 'static', lyrics: match.plainLyrics, source: 'lrclib_search' };
+                        }
                     }
                 }
             }
 
             // Stage 6: Fallback Search LRCLIB with cleanTitle only
             const searchTitleOnlyUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle.trim())}`;
-            const searchTitleOnlyRes = await fetch(searchTitleOnlyUrl);
+            console.log(`[InnerTubeClient] Stage 6 LRCLIB Title Search: ${searchTitleOnlyUrl}`);
+            const searchTitleOnlyRes = await fetch(searchTitleOnlyUrl, { headers: fetchHeaders });
             if (searchTitleOnlyRes.ok) {
                 const searchTitleOnlyData = await searchTitleOnlyRes.json();
                 if (Array.isArray(searchTitleOnlyData) && searchTitleOnlyData.length > 0) {
                     const match = searchTitleOnlyData.find((item: any) => item.syncedLyrics || item.plainLyrics);
                     if (match) {
-                        if (match.syncedLyrics) return { type: 'synced', lyrics: match.syncedLyrics, source: 'lrclib_title_search' };
-                        if (match.plainLyrics) return { type: 'static', lyrics: match.plainLyrics, source: 'lrclib_title_search' };
+                        if (match.syncedLyrics) {
+                            console.log(`[InnerTubeClient] ✅ Stage 6 Title Search Synced Hit! ("${match.trackName}")`);
+                            return { type: 'synced', lyrics: match.syncedLyrics, source: 'lrclib_title_search' };
+                        }
+                        if (match.plainLyrics) {
+                            console.log(`[InnerTubeClient] ✅ Stage 6 Title Search Plain Hit!`);
+                            return { type: 'static', lyrics: match.plainLyrics, source: 'lrclib_title_search' };
+                        }
                     }
                 }
             }

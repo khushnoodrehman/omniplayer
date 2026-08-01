@@ -336,7 +336,9 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             };
 
             const storeInCacheAndSet = (lyrics: ParsedLyric[], error: string | null) => {
-                lyricsCacheMap.set(track.id, { lyrics, error });
+                if (lyrics && lyrics.length > 0) {
+                    lyricsCacheMap.set(track.id, { lyrics, error });
+                }
                 set({
                     currentLyrics: lyrics,
                     lyricsError: error,

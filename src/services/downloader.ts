@@ -267,35 +267,14 @@ export const downloadTrackFile = async (
         let lyricsText = '';
         let rawLrcText = '';
         try {
-            const lyricsData = await InnerTubeClient.getLyrics(track.title, primaryArtist, trackId);
-            if (lyricsData && lyricsData.lyrics) {
+            const lyricsData = await InnerTubeClient.getLyrics(finalTitle || track.title, primaryArtist || track.artist, trackId);
+            if (lyricsData && lyricsData.type !== 'none' && lyricsData.lyrics) {
                 rawLrcText = lyricsData.lyrics;
                 lyricsText = lyricsData.type === 'synced' ? cleanLrcToPlainText(lyricsData.lyrics) : lyricsData.lyrics;
+                console.log(`[Downloader] Successfully fetched ${lyricsData.type} lyrics from source: ${lyricsData.source}`);
             }
         } catch (lyrErr) {
             console.warn('[Downloader] Failed to fetch lyrics for caching:', lyrErr);
-        }
-
-        // LRCLIB API Fallback Check
-        const isLyricsUnavailable = (text: string | null | undefined): boolean => {
-            if (!text) return true;
-            const cleaned = text.toLowerCase().trim();
-            return (
-                cleaned === '' ||
-                cleaned.includes('lyrics not available') ||
-                cleaned.includes('no lyrics found') ||
-                cleaned.includes('instrumental')
-            );
-        };
-
-        if (isLyricsUnavailable(lyricsText)) {
-            console.log(`[Downloader] Primary lyrics unavailable for "${finalTitle}". Fetching fallback from LRCLIB...`);
-            const fallbackLyrics = await fetchFallbackLyrics(finalTitle, getPrimaryArtist(finalArtist));
-            if (fallbackLyrics && (fallbackLyrics.plainLyrics || fallbackLyrics.syncedLyrics)) {
-                lyricsText = fallbackLyrics.plainLyrics;
-                rawLrcText = fallbackLyrics.syncedLyrics;
-                console.log(`[Downloader] Successfully fetched fallback lyrics from LRCLIB!`);
-            }
         }
 
         console.log(`[Downloader] Pre-processing completed for: "${finalTitle}"`);
