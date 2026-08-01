@@ -13,7 +13,7 @@ import TrackOptionsSheet from '@/components/track-options-sheet';
 import { PlaylistSkeleton } from '@/components/playlist-skeleton';
 
 import * as MediaLibrary from 'expo-media-library/legacy';
-import { extractLocalMetadata } from '@/services/metadata';
+import { extractLocalMetadata, globalLocalMetadataCache } from '@/services/metadata';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -57,15 +57,15 @@ export default function PlaylistScreen() {
                     });
                     const songs: Track[] = [];
                     for (const track of media.assets) {
-                        const result = await extractLocalMetadata(track.uri).catch(() => null);
-                        const albumName = result?.album || 'Local Album';
-                        const artistName = result?.artist || 'Local Audio';
-                        const artwork = result?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null);
+                        const cached = globalLocalMetadataCache.get(track.uri);
+                        const albumName = cached?.album || 'Local Album';
+                        const artistName = cached?.artist || 'Local Audio';
+                        const artwork = cached?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null);
                         const isMatch = isAlbum ? albumName === targetName : artistName === targetName;
                         if (isMatch) {
                             songs.push({
                                 id: track.id,
-                                title: result?.title || track.filename.replace(/\.[^/.]+$/, ""),
+                                title: cached?.title || track.filename.replace(/\.[^/.]+$/, ""),
                                 artist: artistName,
                                 image: artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
                                 duration: track.duration,

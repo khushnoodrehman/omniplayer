@@ -8,11 +8,12 @@ export interface LocalMetadata {
   artwork?: string;
 }
 
-/**
- * Extracts metadata (Title, Artist, Embedded Artwork) from a local media file URI.
- * Uses native MediaMetadataRetriever under the hood for fast, low-memory extraction.
- */
+export const globalLocalMetadataCache = new Map<string, LocalMetadata>();
+
 export const extractLocalMetadata = async (fileUri: string): Promise<LocalMetadata | null> => {
+  if (globalLocalMetadataCache.has(fileUri)) {
+    return globalLocalMetadataCache.get(fileUri)!;
+  }
   return new Promise((resolve) => {
     // Offload to next tick/macro-task to keep JS UI thread responsive
     setTimeout(() => {
@@ -29,12 +30,14 @@ export const extractLocalMetadata = async (fileUri: string): Promise<LocalMetada
           return;
         }
 
-        resolve({
+        const data: LocalMetadata = {
           title: result.title || '',
           artist: result.artist || '',
           album: result.album || '',
           artwork: result.artwork,
-        });
+        };
+        globalLocalMetadataCache.set(fileUri, data);
+        resolve(data);
       } catch (err) {
         console.error(`[MetadataExtractor] Exception extracting metadata for ${fileUri}:`, err);
         resolve(null);
