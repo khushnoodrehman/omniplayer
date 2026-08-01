@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type AccentColorName = 'Purple' | 'Ocean Blue' | 'Emerald Green' | 'Rose Red' | 'Amber Gold';
+export type AccentColorName = 'Midnight Magenta' | 'Purple' | 'Ocean Blue' | 'Emerald Green' | 'Rose Red' | 'Amber Gold';
 
 export interface AccentTheme {
   light: string;
@@ -12,6 +12,12 @@ export interface AccentTheme {
 }
 
 export const AccentPalettes: Record<AccentColorName, AccentTheme> = {
+  'Midnight Magenta': {
+    light: '#ff2d75',
+    dark: '#ff3b8d',
+    lightPill: '#ffe4e6',
+    darkPill: '#3c184e',
+  },
   'Purple': {
     light: '#7c3aed',
     dark: '#d7baff',

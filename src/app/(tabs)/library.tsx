@@ -82,16 +82,23 @@ function LocalTrackItem({
 
   const handlePlay = () => {
     const updatedTrack: Track = {
-      ...localQueue[index],
+      id: track.id,
       title: meta.title,
       artist: meta.artist,
-      image: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'
+      image: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+      duration: track.duration,
+      sourceType: 'local',
+      uri: track.uri
     };
 
     const updatedQueue = [...localQueue];
-    updatedQueue[index] = updatedTrack;
-
-    playTrack(updatedTrack, updatedQueue);
+    const targetIndex = updatedQueue.findIndex(t => t.id === track.id || t.uri === track.uri);
+    if (targetIndex !== -1) {
+      updatedQueue[targetIndex] = updatedTrack;
+      playTrack(updatedTrack, updatedQueue);
+    } else {
+      playTrack(updatedTrack, [updatedTrack]);
+    }
   };
 
   const currentTrackId = localQueue[index]?.id || track.id;
@@ -238,6 +245,40 @@ export default function LibraryScreen() {
   useEffect(() => {
     fetchPlaylists();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!audioFiles || audioFiles.length === 0) return;
+    let isMounted = true;
+    const preloadAllMetadata = async () => {
+      let hasUpdates = false;
+      for (const track of audioFiles) {
+        if (!isMounted) break;
+        if (!localMetadataCache.has(track.uri)) {
+          try {
+            const result = await extractLocalMetadata(track.uri);
+            if (result && isMounted) {
+              localMetadataCache.set(track.uri, {
+                title: result.title || track.filename.replace(/\.[^/.]+$/, ""),
+                artist: result.artist || 'Local Audio',
+                album: result.album || 'Local Album',
+                artwork: result.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null)
+              });
+              hasUpdates = true;
+            }
+          } catch (err) {
+            // Ignore error
+          }
+        }
+      }
+      if (hasUpdates && isMounted) {
+        setMetaVersion(v => v + 1);
+      }
+    };
+    preloadAllMetadata();
+    return () => {
+      isMounted = false;
+    };
+  }, [audioFiles]);
 
   const handleCreatePlaylist = async () => {
     const trimmed = newPlaylistName.trim();
@@ -698,11 +739,7 @@ export default function LibraryScreen() {
                     <Pressable
                       key={artist.name}
                       style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                      onPress={() => {
-                        if (artist.songs.length > 0) {
-                          playTrack(artist.songs[0], artist.songs);
-                        }
-                      }}
+                      onPress={() => router.push(`/playlist?id=artist_${encodeURIComponent(artist.name)}`)}
                     >
                       <Image
                         source={{ uri: artist.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
@@ -715,7 +752,7 @@ export default function LibraryScreen() {
                           {artist.songs.length} {artist.songs.length === 1 ? 'song' : 'songs'}
                         </RNText>
                       </View>
-                      <AppIcon ios="play.fill" android="play" size={18} color={colors.accent} />
+                      <AppIcon ios="chevron.right" android="chevron-forward" size={18} color={colors.textSecondary} />
                     </Pressable>
                   ))
                 )}
@@ -736,11 +773,7 @@ export default function LibraryScreen() {
                     <Pressable
                       key={album.name}
                       style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
-                      onPress={() => {
-                        if (album.songs.length > 0) {
-                          playTrack(album.songs[0], album.songs);
-                        }
-                      }}
+                      onPress={() => router.push(`/playlist?id=album_${encodeURIComponent(album.name)}`)}
                     >
                       <Image
                         source={{ uri: album.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}

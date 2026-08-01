@@ -60,7 +60,7 @@ export default function NowPlayingModal() {
 
   const [pageIndex, setPageIndex] = useState(0);
   const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const isDark = true; // Always dark theme for NowPlayingModal
 
   const handleScroll = (e: any) => {
     const offsetX = e.nativeEvent.contentOffset.x;

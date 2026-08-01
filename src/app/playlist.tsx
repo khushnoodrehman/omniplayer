@@ -12,6 +12,9 @@ import { InnerTubeClient } from '@/services/InnerTubeClient';
 import TrackOptionsSheet from '@/components/track-options-sheet';
 import { PlaylistSkeleton } from '@/components/playlist-skeleton';
 
+import * as MediaLibrary from 'expo-media-library/legacy';
+import { extractLocalMetadata } from '@/services/metadata';
+
 const { width: screenWidth } = Dimensions.get('window');
 
 const formatDuration = (seconds: number) => {
@@ -45,6 +48,44 @@ export default function PlaylistScreen() {
         const fetchPlaylistDetails = async () => {
             setIsLoading(true);
             try {
+                if (id.startsWith('album_') || id.startsWith('artist_')) {
+                    const isAlbum = id.startsWith('album_');
+                    const targetName = decodeURIComponent(id.replace(/^(album_|artist_)/, ''));
+                    const media = await MediaLibrary.getAssetsAsync({
+                        mediaType: MediaLibrary.MediaType.audio,
+                        first: 500,
+                    });
+                    const songs: Track[] = [];
+                    for (const track of media.assets) {
+                        const result = await extractLocalMetadata(track.uri).catch(() => null);
+                        const albumName = result?.album || 'Local Album';
+                        const artistName = result?.artist || 'Local Audio';
+                        const artwork = result?.artwork || (track.albumId ? `content://media/external/audio/albumart/${track.albumId}` : null);
+                        const isMatch = isAlbum ? albumName === targetName : artistName === targetName;
+                        if (isMatch) {
+                            songs.push({
+                                id: track.id,
+                                title: result?.title || track.filename.replace(/\.[^/.]+$/, ""),
+                                artist: artistName,
+                                image: artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+                                duration: track.duration,
+                                sourceType: 'local',
+                                uri: track.uri
+                            });
+                        }
+                    }
+                    setPlaylist({
+                        id,
+                        title: targetName,
+                        subtitle: isAlbum ? `Local Album • ${songs.length} songs` : `Local Artist • ${songs.length} songs`,
+                        image: songs[0]?.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png',
+                        songs,
+                        trackCount: songs.length,
+                        duration: ""
+                    });
+                    setIsLoading(false);
+                    return;
+                }
                 // If custom local playlist, load directly from DB and skip API query
                 if (id.startsWith('pl_')) {
                     const localTracks = await getPlaylistTracksDB(id);

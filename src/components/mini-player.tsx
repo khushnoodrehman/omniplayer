@@ -32,7 +32,7 @@ export default function MiniPlayer() {
   }
 
   const isTabScreen = pathname === '/' || pathname === '/search' || pathname === '/library' || pathname === '/settings' || pathname.includes('(tabs)');
-  const bottomMargin = isTabScreen ? Math.max(insets.bottom + 58, 80) : Math.max(insets.bottom + 12, 18);
+  const bottomMargin = isTabScreen ? Math.max(insets.bottom + 72, 94) : Math.max(insets.bottom + 12, 18);
 
   const getCleanArtistName = (rawArtist: string) => {
     if (!rawArtist) return '';
