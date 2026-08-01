@@ -96,6 +96,30 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
   const accountInfo = usePlaybackStore((state) => state.accountInfo);
+  const lrcExportDirectoryUri = usePlaybackStore((state) => state.lrcExportDirectoryUri);
+  const setLrcExportDirectoryUri = usePlaybackStore((state) => state.setLrcExportDirectoryUri);
+
+  const handleSelectMusicFolderPermission = async () => {
+    try {
+      if (Platform.OS !== 'android') {
+        Alert.alert("Notice", "Directory permissions are only required on Android devices.");
+        return;
+      }
+      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (permissions.granted) {
+        setLrcExportDirectoryUri(permissions.directoryUri);
+        Alert.alert(
+          "Music Folder Access Granted! 🎉",
+          "Your selected folder has been saved. Downloaded music and synced .lrc lyrics files will automatically be exported here!"
+        );
+      } else {
+        Alert.alert("Permission Denied", "Music folder permission was not granted.");
+      }
+    } catch (err) {
+      console.error("[Settings] Storage permission error:", err);
+      Alert.alert("Error", "Could not open folder picker.");
+    }
+  };
 
   // Scroll header animation variables
   const lastScrollY = useSharedValue(0);
@@ -366,10 +390,21 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Storage Section */}
+          {/* Downloads & Storage Section */}
           <View style={{ gap: 12, paddingHorizontal: 16 }}>
-            <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Storage</RNText>
+            <RNText style={[styles.sectionTitle, { color: colors.textSecondary }]}>Downloads & Storage</RNText>
             <View style={{ gap: 8 }}>
+              <SettingRow
+                iosIcon="folder"
+                androidIcon="folder-open-outline"
+                title="Music Folder Access (SAF)"
+                value={
+                  lrcExportDirectoryUri 
+                    ? (lrcExportDirectoryUri.includes('%3A') ? `Folder: ${decodeURIComponent(lrcExportDirectoryUri.split('%3A').pop() || 'Music')}` : 'Permission Granted') 
+                    : 'Tap to Select Folder'
+                }
+                onPress={handleSelectMusicFolderPermission}
+              />
               <SettingRow
                 iosIcon="folder.badge.gearshape"
                 androidIcon="folder-open"
