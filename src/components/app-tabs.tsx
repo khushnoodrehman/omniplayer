@@ -11,11 +11,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   return (
     <View style={[
-      styles.tabBarContainer,
+      styles.floatingTabBar,
       {
         backgroundColor: colors.tabBarBackground,
-        paddingBottom: Math.max(insets.bottom, 10),
-        borderTopColor: colors.cardBorder,
+        borderColor: colors.cardBorder,
+        bottom: Math.max(insets.bottom, 12),
       }
     ]}>
       {state.routes.map((route: any, index: number) => {
@@ -68,7 +68,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               <AppIcon
                 ios={iconIos}
                 android={iconAndroid as any}
-                size={22}
+                size={20}
                 color={isFocused ? colors.tabBarIconSelected : colors.tabBarIconUnselected}
               />
             </View>
@@ -102,33 +102,39 @@ export default function AppTabs() {
 }
 
 const styles = StyleSheet.create({
-  tabBarContainer: {
+  floatingTabBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingTop: 6,
-    borderTopWidth: 1,
+    marginHorizontal: 16,
+    height: 62,
+    borderRadius: 28,
+    borderWidth: 1,
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    elevation: 8,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
     zIndex: 99,
   },
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
+    height: '100%',
   },
   pillWrapper: {
     paddingHorizontal: 16,
     paddingVertical: 4,
-    borderRadius: 16,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
   tabLabel: {
-    fontSize: 11,
+    fontSize: 10,
     marginTop: 2,
   },
 });

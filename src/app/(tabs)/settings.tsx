@@ -478,16 +478,9 @@ export default function SettingsScreen() {
               <SettingRow
                 iosIcon="info.circle"
                 androidIcon="information-circle-outline"
-                title="Version"
-                value="v1.0.0 (Expo SDK 57)"
-                onPress={() => Alert.alert("Omniplayer", "Omniplayer v1.0.0\nBuilt with React Native & Expo SDK 57")}
-              />
-              <SettingRow
-                iosIcon="globe"
-                androidIcon="code-slash-outline"
-                title="GitHub Repository"
-                value="Open Link"
-                onPress={handleOpenGitHub}
+                title="About OmniPlayer"
+                value="v1.0.0 RELEASE"
+                onPress={() => router.push('/about' as any)}
               />
             </View>
           </View>

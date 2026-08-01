@@ -15,6 +15,7 @@ import { useLocalAudio } from '@/hooks/use-local-audio';
 import MiniPlayer from '@/components/mini-player';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import { AppHeader } from '@/components/app-header';
+import { PlayingBars } from '@/components/ui/playing-bars';
 
 const { width: screenWidth } = Dimensions.get('window');
 const columnWidth = Math.floor((screenWidth - 48) / 2);
@@ -128,28 +129,39 @@ interface YouTubeItemProps {
   imageUri: string;
   onPress: () => void;
   isLoading?: boolean;
+  isPlayingNow?: boolean;
   isLiked?: boolean;
   onLike?: () => void;
   onDownload?: () => void;
 }
-const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isLiked, onLike, onDownload }: YouTubeItemProps) => {
+const YouTubeItem = ({ title, subtitle, imageUri, onPress, isLoading, isPlayingNow, isLiked, onLike, onDownload }: YouTubeItemProps) => {
   try {
     const colors = useTheme();
     return (
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.ytItemRow, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && { backgroundColor: colors.backgroundSelected }]}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.ytItemRow,
+          { backgroundColor: colors.backgroundElement, borderColor: isPlayingNow ? colors.accent : colors.cardBorder },
+          isPlayingNow && { borderWidth: 1.5 },
+          pressed && { backgroundColor: colors.backgroundSelected }
+        ]}
+      >
         <View style={styles.ytImageWrapper}>
           <Image source={{ uri: imageUri || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }} style={styles.ytImage} resizeMode="cover" />
-          <View style={styles.ytPlayOverlay}>
+          <View style={[styles.ytPlayOverlay, isPlayingNow && { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
             {isLoading ? (
               <ActivityIndicator size="small" color="#ffffff" />
+            ) : isPlayingNow ? (
+              <PlayingBars color="#ffffff" size={16} />
             ) : (
               <AppIcon ios="play.circle" android="play-circle" size={16} color="#ffffff" />
             )}
           </View>
         </View>
         <View style={{ flex: 1, paddingRight: 8 }}>
-          <RNText style={[styles.ytTitle, { color: isLoading ? colors.accent : colors.text }]} numberOfLines={1}>{title}</RNText>
-          <RNText style={[styles.ytSubtitle, { color: colors.textSecondary }]}>{subtitle}</RNText>
+          <RNText style={[styles.ytTitle, { color: (isLoading || isPlayingNow) ? colors.accent : colors.text, fontWeight: isPlayingNow ? '700' : '500' }]} numberOfLines={1}>{title}</RNText>
+          <RNText style={[styles.ytSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{subtitle}</RNText>
         </View>
         {onLike && (
           <Pressable onPress={onLike} style={{ padding: 8, marginRight: 4 }}>
@@ -179,6 +191,7 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colors = useTheme();
   const playTrack = usePlaybackStore((state) => state.playTrack);
+  const currentTrack = usePlaybackStore((state) => state.currentTrack);
   const toggleFavorite = usePlaybackStore((state) => state.toggleFavorite);
   const favoriteTracks = usePlaybackStore((state) => state.favoriteTracks);
   const downloadTrack = usePlaybackStore((state) => state.downloadTrack);
@@ -661,6 +674,7 @@ export default function SearchScreen() {
                                   imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
                                   onPress={() => handlePlayYouTubeTrack(item)}
                                   isLoading={loadingTrackId === item.id}
+                                  isPlayingNow={currentTrack?.id === item.id}
                                   isLiked={favoriteTracks.includes(item.id)}
                                   onLike={() => toggleFavorite({
                                     id: item.id,

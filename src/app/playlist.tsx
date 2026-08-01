@@ -15,6 +15,8 @@ import { PlaylistSkeleton } from '@/components/playlist-skeleton';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { extractLocalMetadata, globalLocalMetadataCache } from '@/services/metadata';
 
+import { PlayingBars } from '@/components/ui/playing-bars';
+
 const { width: screenWidth } = Dimensions.get('window');
 
 const formatDuration = (seconds: number) => {
@@ -30,6 +32,7 @@ export default function PlaylistScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
 
     const playTrack = usePlaybackStore((state) => state.playTrack);
+    const currentTrack = usePlaybackStore((state) => state.currentTrack);
     const setNowPlayingPlaylist = usePlaybackStore((state) => state.setNowPlayingPlaylist);
     const downloadPlaylist = usePlaybackStore((state) => state.downloadPlaylist);
 
@@ -361,58 +364,66 @@ export default function PlaylistScreen() {
 
                 {/* Track List */}
                 <View style={styles.trackList}>
-                    {playlist.songs && playlist.songs.map((track: any, index: number) => (
-                        <Pressable
-                            key={`${track.id}-${index}`}
-                            onPress={() => {
-                                setNowPlayingPlaylist({
-                                    id: playlist.id,
-                                    name: playlist.title,
-                                    image: playlist.image,
-                                    type: playlist.id.startsWith('pl_') ? 'local' : 'online'
-                                });
-                                playTrack(track, playlist.songs);
-                            }}
-                            style={({ pressed }) => [
-                                styles.trackItem,
-                                { backgroundColor: colors.backgroundElement },
-                                pressed && { opacity: 0.8 }
-                            ]}
-                        >
-                            <RNText style={[styles.trackIndex, { color: colors.textSecondary }]}>{index + 1}</RNText>
-                            <View style={styles.trackImageContainer}>
-                                <Image source={{ uri: track.image }} style={styles.trackImage} contentFit="cover" />
-                                <View style={styles.trackPlayOverlay}>
-                                    <AppIcon ios="play.fill" android="play" size={12} color="#fff" />
-                                </View>
-                            </View>
-
-                            <View style={styles.trackInfo}>
-                                <View style={styles.trackTitleRow}>
-                                    <RNText style={[styles.trackTitle, { color: colors.text }]} numberOfLines={1}>{track.title}</RNText>
-                                    {track.isExplicit && (
-                                        <View style={[styles.explicitBadge, { backgroundColor: colors.backgroundSelected }]}>
-                                            <RNText style={[styles.explicitText, { color: colors.textSecondary }]}>E</RNText>
-                                        </View>
-                                    )}
-                                </View>
-                                <RNText style={[styles.trackArtist, { color: colors.textSecondary }]} numberOfLines={1}>
-                                    {track.artist}
-                                </RNText>
-                            </View>
-
-                            <RNText style={[styles.trackDuration, { color: colors.textSecondary }]}>
-                                {formatDuration(track.duration)}
-                            </RNText>
-
+                    {playlist.songs && playlist.songs.map((track: Track, index: number) => {
+                        const isPlayingNow = currentTrack?.id === track.id || currentTrack?.uri === track.uri;
+                        return (
                             <Pressable
-                                onPress={() => handleTrackOptions(track)}
-                                style={styles.trackMoreButton}
+                                key={`${track.id}-${index}`}
+                                onPress={() => {
+                                    setNowPlayingPlaylist({
+                                        id: playlist.id,
+                                        name: playlist.title,
+                                        image: playlist.image,
+                                        type: playlist.id.startsWith('pl_') ? 'local' : 'online'
+                                    });
+                                    playTrack(track, playlist.songs);
+                                }}
+                                style={({ pressed }) => [
+                                    styles.trackItem,
+                                    { backgroundColor: colors.backgroundElement, borderColor: isPlayingNow ? colors.accent : colors.cardBorder },
+                                    isPlayingNow && { borderWidth: 1.5 },
+                                    pressed && { backgroundColor: colors.backgroundSelected }
+                                ]}
                             >
-                                <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                                <RNText style={[styles.trackIndex, { color: isPlayingNow ? colors.accent : colors.textSecondary }]}>{index + 1}</RNText>
+                                <View style={styles.trackImageContainer}>
+                                    <Image source={{ uri: track.image }} style={styles.trackImage} contentFit="cover" />
+                                    <View style={[styles.trackPlayOverlay, isPlayingNow && { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
+                                        {isPlayingNow ? (
+                                            <PlayingBars color="#ffffff" size={14} />
+                                        ) : (
+                                            <AppIcon ios="play.fill" android="play" size={12} color="#fff" />
+                                        )}
+                                    </View>
+                                </View>
+
+                                <View style={styles.trackInfo}>
+                                    <View style={styles.trackTitleRow}>
+                                        <RNText style={[styles.trackTitle, { color: isPlayingNow ? colors.accent : colors.text, fontWeight: isPlayingNow ? '700' : '500' }]} numberOfLines={1}>{track.title}</RNText>
+                                        {(track as any).isExplicit && (
+                                            <View style={[styles.explicitBadge, { backgroundColor: colors.backgroundSelected }]}>
+                                                <RNText style={[styles.explicitText, { color: colors.textSecondary }]}>E</RNText>
+                                            </View>
+                                        )}
+                                    </View>
+                                    <RNText style={[styles.trackArtist, { color: colors.textSecondary }]} numberOfLines={1}>
+                                        {track.artist}
+                                    </RNText>
+                                </View>
+
+                                <RNText style={[styles.trackDuration, { color: colors.textSecondary }]}>
+                                    {formatDuration(track.duration)}
+                                </RNText>
+
+                                <Pressable
+                                    onPress={() => handleTrackOptions(track)}
+                                    style={styles.trackMoreButton}
+                                >
+                                    <AppIcon ios="ellipsis" android="ellipsis-vertical" size={20} color={colors.textSecondary} />
+                                </Pressable>
                             </Pressable>
-                        </Pressable>
-                    ))}
+                        );
+                    })}
                 </View>
             </ScrollView>
 

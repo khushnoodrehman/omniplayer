@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { useSharedValue, useAnimatedStyle, useAnimatedScrollHandler } from 'react-native-reanimated';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import { AppHeader } from '@/components/app-header';
+import { PlayingBars } from '@/components/ui/playing-bars';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -30,6 +31,7 @@ interface LocalTrackItemProps {
   localQueue: Track[];
   onTrackOptions: (track: Track) => void;
   onMetaExtracted?: () => void;
+  isPlayingNow?: boolean;
 }
 
 function LocalTrackItem({
@@ -41,7 +43,8 @@ function LocalTrackItem({
   playTrack,
   localQueue,
   onTrackOptions,
-  onMetaExtracted
+  onMetaExtracted,
+  isPlayingNow
 }: LocalTrackItemProps) {
   const cachedMeta = localMetadataCache.get(track.uri);
 
@@ -106,16 +109,34 @@ function LocalTrackItem({
 
   return (
     <Pressable
-      style={[styles.listItem, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }]}
+      style={[
+        styles.listItem,
+        { backgroundColor: colors.backgroundElement, borderColor: isPlayingNow ? colors.accent : colors.cardBorder },
+        isPlayingNow && { borderWidth: 1.5 }
+      ]}
       onPress={handlePlay}
     >
-      <Image
-        source={{ uri: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
-        style={styles.listItemArt}
-        contentFit="cover"
-      />
+      <View style={{ position: 'relative', width: 44, height: 44 }}>
+        <Image
+          source={{ uri: meta.artwork || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }}
+          style={[styles.listItemArt, { width: 44, height: 44 }]}
+          contentFit="cover"
+        />
+        {isPlayingNow && (
+          <View style={{
+            position: 'absolute',
+            top: 0, left: 0, right: 0, bottom: 0,
+            borderRadius: 8,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}>
+            <PlayingBars color="#ffffff" size={18} />
+          </View>
+        )}
+      </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <RNText style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>{meta.title}</RNText>
+        <RNText style={[styles.listItemTitle, { color: isPlayingNow ? colors.accent : colors.text, fontWeight: isPlayingNow ? '700' : '500' }]} numberOfLines={1}>{meta.title}</RNText>
         <RNText style={[styles.listItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>{meta.artist}</RNText>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -184,6 +205,7 @@ export default function LibraryScreen() {
   const [metaVersion, setMetaVersion] = useState(0);
 
   const nowPlayingPlaylist = usePlaybackStore((state) => state.nowPlayingPlaylist);
+  const currentTrack = usePlaybackStore((state) => state.currentTrack);
   const [ytLikedPlaylist, setYtLikedPlaylist] = useState<any>(null);
   const [isYTConnected, setIsYTConnected] = useState(false);
 
@@ -591,6 +613,7 @@ export default function LibraryScreen() {
                         setSelectedTrack(t);
                         setIsTrackOptionsVisible(true);
                       }}
+                      isPlayingNow={currentTrack?.id === track.id || currentTrack?.uri === track.uri}
                       onMetaExtracted={() => setMetaVersion(v => v + 1)}
                     />
                   ))
@@ -802,7 +825,7 @@ export default function LibraryScreen() {
       <Pressable
         style={({ pressed }) => [
           styles.fab,
-          { backgroundColor: colors.accent },
+          { backgroundColor: colors.accent, bottom: currentTrack ? 154 : 95 },
           pressed && styles.pressed
         ]}
         onPress={() => setIsCreateModalVisible(true)}
