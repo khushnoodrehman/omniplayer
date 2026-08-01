@@ -12,6 +12,11 @@ export async function setupPlayer() {
             },
             android: {
                 taskRemovedBehavior: 'continue',
+                notification: {
+                    channelId: 'omniplayer_media_channel',
+                    channelName: 'OmniPlayer Media Playback',
+                    smallIcon: 'notification_icon'
+                }
             }
         });
 

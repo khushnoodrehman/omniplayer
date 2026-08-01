@@ -8,6 +8,7 @@ import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, SharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppLogo } from '@/components/ui/app-logo';
 import YTAuthModal from '@/components/yt-auth-modal';
 
 interface AppHeaderProps {
@@ -138,9 +139,12 @@ export function AppHeader({
         ) : (
           /* Standard Title Header View */
           <>
-            <RNText style={[styles.headerTitle, { color: title === 'Omniplayer' ? colors.accent : colors.text, fontWeight: '700' }]} numberOfLines={1}>
-              {title}
-            </RNText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppLogo size={28} />
+              <RNText style={[styles.headerTitle, { color: colors.text, fontWeight: '700' }]} numberOfLines={1}>
+                {title}
+              </RNText>
+            </View>
             <View style={{ flex: 1 }} />
             {showSearchIcon && (
               <Pressable

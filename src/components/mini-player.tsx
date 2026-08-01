@@ -1,9 +1,8 @@
-import React from 'react';
-import { StyleSheet, View, Text as RNText, Pressable, Dimensions } from 'react-native';
-import { Image } from 'expo-image';
 import { AppIcon } from '@/components/ui/app-icon';
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
+import { Image } from 'expo-image';
+import { Dimensions, Pressable, Text as RNText, StyleSheet, View } from 'react-native';
 
 import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
