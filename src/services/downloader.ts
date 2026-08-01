@@ -231,7 +231,7 @@ export const downloadTrackFile = async (
                             android: {
                                 channelId,
                                 onlyAlertOnce: true,
-                                ongoing: true,
+                                ongoing: false,
                                 progress: {
                                     max: 100,
                                     current: percent,
@@ -395,7 +395,7 @@ export const downloadTrackFile = async (
                     android: {
                         channelId,
                         onlyAlertOnce: true,
-                        ongoing: true,
+                        ongoing: false,
                         progress: {
                             max: 100,
                             current: 0,
@@ -513,6 +513,11 @@ export const downloadTrackFile = async (
         }
         return null;
     } finally {
+        // Clear active notification for this track if completed or cancelled
+        if (Platform.OS === 'android' && trackId) {
+            notifee.cancelNotification(trackId).catch(() => {});
+        }
+
         // Strict Garbage Collection - clean up all temporary cached items to prevent storage leaks
         console.log("[Downloader] Running strict garbage collection of temporary files...");
         for (const tempPath of filesToDelete) {
@@ -525,6 +530,16 @@ export const downloadTrackFile = async (
             } catch (gcErr) {
                 console.warn(`[Downloader GC] Failed to delete: ${tempPath}`, gcErr);
             }
+        }
+    }
+};
+
+export const cancelAllActiveDownloadNotifications = async () => {
+    if (Platform.OS === 'android') {
+        try {
+            await notifee.cancelAllNotifications();
+        } catch (err) {
+            console.warn('[Downloader] Failed to cancel notifications:', err);
         }
     }
 };

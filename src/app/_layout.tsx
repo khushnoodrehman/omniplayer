@@ -11,6 +11,7 @@ import MiniPlayer from '@/components/mini-player';
 import { initDB } from '@/services/db';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { setupPlayer, playbackService, backgroundPlaybackService } from '@/services/playbackService';
+import { cancelAllActiveDownloadNotifications } from '@/services/downloader';
 
 TrackPlayer.registerBackgroundEventHandler(() => backgroundPlaybackService);
 
@@ -23,6 +24,7 @@ export default function TabLayout() {
 
   useEffect(() => {
     const init = async () => {
+      await cancelAllActiveDownloadNotifications();
       await initDB();
       await loadStoreData();
       try {

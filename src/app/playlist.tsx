@@ -365,7 +365,12 @@ export default function PlaylistScreen() {
                 {/* Track List */}
                 <View style={styles.trackList}>
                     {playlist.songs && playlist.songs.map((track: Track, index: number) => {
-                        const isPlayingNow = currentTrack?.id === track.id || currentTrack?.uri === track.uri;
+                        const isPlayingNow = Boolean(
+                            currentTrack &&
+                            track &&
+                            ((currentTrack.id && track.id && currentTrack.id === track.id) ||
+                             (currentTrack.uri && track.uri && currentTrack.uri === track.uri))
+                        );
                         return (
                             <Pressable
                                 key={`${track.id}-${index}`}
