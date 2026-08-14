@@ -108,6 +108,14 @@ const CLIENTS: Record<string, ClientConfig> = {
     }
 };
 
+export interface StructuredSearchResults {
+    topResult: any | null;
+    songs: any[];
+    artists: any[];
+    albums: any[];
+    playlists: any[];
+}
+
 export class InnerTubeClient {
     private static visitorData: string | null = null;
     private static glCode: string | null = null;
@@ -571,6 +579,123 @@ export class InnerTubeClient {
     // ============================================================================
 
     /**
+     * Single-call Structured Search that groups results into Top Result, Songs, Artists, Albums, and Playlists
+     */
+    public static async searchStructured(query: string): Promise<StructuredSearchResults> {
+        const result: StructuredSearchResults = {
+            topResult: null,
+            songs: [],
+            artists: [],
+            albums: [],
+            playlists: []
+        };
+
+        try {
+            const response = await this.postRequest('search', { query });
+            const tabContent = response.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer;
+
+            if (tabContent && tabContent.contents) {
+                for (const section of tabContent.contents) {
+                    // 1. Top Result Card (musicCardShelfRenderer)
+                    if (section.musicCardShelfRenderer && !result.topResult) {
+                        const parsedCard = this.parseMusicCardShelf(section.musicCardShelfRenderer);
+                        if (parsedCard) {
+                            result.topResult = parsedCard;
+                            if (parsedCard.itemType === 'artist') {
+                                result.artists.push(parsedCard);
+                            } else if (parsedCard.itemType === 'album') {
+                                result.albums.push(parsedCard);
+                            } else if (parsedCard.itemType === 'playlist') {
+                                result.playlists.push(parsedCard);
+                            } else if (parsedCard.itemType === 'track') {
+                                result.songs.push(parsedCard);
+                            }
+                        }
+                    }
+
+                    // 2. Standard Search Shelf (musicShelfRenderer)
+                    const shelf = section.musicShelfRenderer;
+                    if (shelf && shelf.contents) {
+                        const shelfTitle = (
+                            shelf.title?.runs?.[0]?.text ||
+                            shelf.header?.musicHeaderRenderer?.title?.runs?.[0]?.text ||
+                            ''
+                        ).toLowerCase();
+
+                        let defaultCategory: 'track' | 'artist' | 'album' | 'playlist' = 'track';
+                        if (shelfTitle.includes('artist')) defaultCategory = 'artist';
+                        else if (shelfTitle.includes('album')) defaultCategory = 'album';
+                        else if (shelfTitle.includes('playlist')) defaultCategory = 'playlist';
+                        else if (shelfTitle.includes('song') || shelfTitle.includes('video')) defaultCategory = 'track';
+
+                        for (const item of shelf.contents) {
+                            const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                            if (parsed) {
+                                const finalType = (parsed.itemType && parsed.itemType !== 'track') ? parsed.itemType : defaultCategory;
+                                parsed.itemType = finalType;
+
+                                if (finalType === 'artist') {
+                                    if (!result.artists.some(a => a.id === parsed.id)) result.artists.push(parsed);
+                                } else if (finalType === 'album') {
+                                    if (!result.albums.some(a => a.id === parsed.id)) result.albums.push(parsed);
+                                } else if (finalType === 'playlist') {
+                                    if (!result.playlists.some(p => p.id === parsed.id)) result.playlists.push(parsed);
+                                } else {
+                                    if (!result.songs.some(s => s.id === parsed.id)) result.songs.push(parsed);
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Carousel Shelf (musicCarouselShelfRenderer)
+                    const carousel = section.musicCarouselShelfRenderer;
+                    if (carousel && carousel.contents) {
+                        const carouselTitle = (
+                            carousel.header?.musicCarouselShelfBasicHeaderRenderer?.title?.runs?.[0]?.text ||
+                            ''
+                        ).toLowerCase();
+
+                        let defaultCategory: 'track' | 'artist' | 'album' | 'playlist' = 'playlist';
+                        if (carouselTitle.includes('artist')) defaultCategory = 'artist';
+                        else if (carouselTitle.includes('album')) defaultCategory = 'album';
+                        else if (carouselTitle.includes('playlist')) defaultCategory = 'playlist';
+                        else if (carouselTitle.includes('song') || carouselTitle.includes('video')) defaultCategory = 'track';
+
+                        for (const item of carousel.contents) {
+                            let parsed: any = null;
+                            if (item.musicTwoRowItemRenderer) {
+                                parsed = this.parseMusicTwoRowItem(item.musicTwoRowItemRenderer);
+                            } else if (item.musicResponsiveListItemRenderer) {
+                                parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                            }
+
+                            if (parsed) {
+                                const finalType = (parsed.itemType && parsed.itemType !== 'track') ? parsed.itemType : defaultCategory;
+                                parsed.itemType = finalType;
+
+                                if (finalType === 'artist') {
+                                    if (!result.artists.some(a => a.id === parsed.id)) result.artists.push(parsed);
+                                } else if (finalType === 'album') {
+                                    if (!result.albums.some(a => a.id === parsed.id)) result.albums.push(parsed);
+                                } else if (finalType === 'playlist') {
+                                    if (!result.playlists.some(p => p.id === parsed.id)) result.playlists.push(parsed);
+                                } else {
+                                    if (!result.songs.some(s => s.id === parsed.id)) result.songs.push(parsed);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return result;
+        } catch (err) {
+            console.error('[InnerTubeClient] Structured search error:', err);
+            return result;
+        }
+    }
+
+    /**
      * Search YouTube Music across all categories (Songs, Artists, Albums, Playlists)
      */
     public static async search(query: string, filter?: 'all' | 'songs' | 'artists' | 'albums' | 'playlists'): Promise<any[]> {
@@ -594,13 +719,11 @@ export class InnerTubeClient {
 
             if (tabContent && tabContent.contents) {
                 for (const section of tabContent.contents) {
-                    // 1. Top Result Card (musicCardShelfRenderer)
                     if (section.musicCardShelfRenderer) {
                         const parsedCard = this.parseMusicCardShelf(section.musicCardShelfRenderer);
                         if (parsedCard) results.push(parsedCard);
                     }
 
-                    // 2. Standard Search Shelf (musicShelfRenderer)
                     const shelf = section.musicShelfRenderer;
                     if (shelf && shelf.contents) {
                         for (const item of shelf.contents) {
@@ -609,7 +732,6 @@ export class InnerTubeClient {
                         }
                     }
 
-                    // 3. Carousel Shelf (musicCarouselShelfRenderer)
                     const carousel = section.musicCarouselShelfRenderer;
                     if (carousel && carousel.contents) {
                         for (const item of carousel.contents) {
