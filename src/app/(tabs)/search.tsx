@@ -410,7 +410,7 @@ export default function SearchScreen() {
       }
     } catch (error) {
       console.error("Stream fetch error:", error);
-      alert("Error playing track. Ensure backend is running.");
+      alert("Could not load online audio stream. Please check your internet connection.");
     } finally {
       setLoadingTrackId(null);
     }

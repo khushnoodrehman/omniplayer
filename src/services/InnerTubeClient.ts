@@ -1059,66 +1059,105 @@ export class InnerTubeClient {
      */
     public static async getStreamUrl(videoId: string): Promise<any> {
         console.log('[InnerTubeClient] getStreamUrl called with videoId:', videoId);
-        try {
-            // Load visitor data if not loaded
-            if (!this.visitorData) {
-                this.visitorData = await AsyncStorage.getItem('yt_visitor_data');
-            }
 
-            // If we still don't have visitorData (first time cold run), fetch a visitor token first
-            if (!this.visitorData) {
-                console.log('[InnerTubeClient] No visitorData found, fetching dummy search to capture visitor token...');
-                try {
-                    await this.postRequest('search', {
-                        query: 'music',
-                        params: 'EgWKAQIIAWoKEAkQBRAFGBQQAQ%3D%3D'
-                    }, 'WEB_REMIX', true);
-                } catch (err) {
-                    console.warn('[InnerTubeClient] Pre-fetch visitor search failed:', err);
+        const clientsToTry: Array<'ANDROID_VR' | 'ANDROID_MUSIC' | 'WEB_REMIX'> = [
+            'ANDROID_VR',
+            'ANDROID_MUSIC',
+            'WEB_REMIX'
+        ];
+
+        let lastError: any = null;
+
+        for (const clientKey of clientsToTry) {
+            try {
+                // Load visitor data if not loaded
+                if (!this.visitorData) {
+                    this.visitorData = await AsyncStorage.getItem('yt_visitor_data');
                 }
-            }
 
-            // Hit `/player` endpoint with ANDROID_VR client to get direct stream URLs
-            const response = await this.postRequest('player', {
-                videoId,
-                playbackContext: {
-                    contentPlaybackContext: {
-                        signatureTimestamp: 19800
+                const response = await this.postRequest('player', {
+                    videoId,
+                    playbackContext: {
+                        contentPlaybackContext: {
+                            signatureTimestamp: 19800
+                        }
                     }
+                }, clientKey, true);
+
+                const streamingData = response.streamingData;
+                if (!streamingData || (!streamingData.adaptiveFormats && !streamingData.formats)) {
+                    console.warn(`[InnerTubeClient] No formats with client ${clientKey}. Status:`, response.playabilityStatus?.status);
+                    continue;
                 }
-            }, 'ANDROID_VR', true);
 
-            const streamingData = response.streamingData;
-            if (!streamingData || !streamingData.adaptiveFormats) {
-                console.log('[InnerTubeClient] No formats. PlayabilityStatus:', JSON.stringify(response.playabilityStatus, null, 2));
-                throw new Error('No streaming formats found in player response');
+                const formatsList = [
+                    ...(streamingData.adaptiveFormats || []),
+                    ...(streamingData.formats || [])
+                ];
+
+                const audioFormats = formatsList.filter((format: any) =>
+                    (format.mimeType?.startsWith('audio/') || !format.mimeType) && !!format.url
+                );
+
+                if (audioFormats.length === 0) {
+                    console.warn(`[InnerTubeClient] No direct playable audio streams found with client ${clientKey}`);
+                    continue;
+                }
+
+                audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+                const bestFormat = audioFormats[0];
+
+                console.log(`[InnerTubeClient] Successfully resolved stream URL with client ${clientKey}`);
+                return {
+                    id: videoId,
+                    stream_url: bestFormat.url,
+                    duration: Math.round(Number(response.videoDetails?.lengthSeconds || 0))
+                };
+            } catch (err: any) {
+                console.warn(`[InnerTubeClient] Stream extraction failed with client ${clientKey}:`, err.message);
+                lastError = err;
             }
-
-            // Extract audio formats that have a direct playable URL
-            const audioFormats = streamingData.adaptiveFormats.filter((format: any) =>
-                format.mimeType?.startsWith('audio/') && !!format.url
-            );
-
-            if (audioFormats.length === 0) {
-                throw new Error('No direct playable audio streams found');
-            }
-
-            // Sort descending by bitrate
-            audioFormats.sort((a: any, b: any) => {
-                return (b.bitrate || 0) - (a.bitrate || 0);
-            });
-
-            const bestFormat = audioFormats[0];
-
-            return {
-                id: videoId,
-                stream_url: bestFormat.url,
-                duration: Math.round(Number(response.videoDetails?.lengthSeconds || 0))
-            };
-        } catch (err) {
-            console.error('[InnerTubeClient] Stream URL extraction error:', err);
-            throw err;
         }
+
+        // If all clients failed with stale visitorData, clear visitorData and attempt one final fresh request
+        if (this.visitorData) {
+            console.log('[InnerTubeClient] Clearing stale visitorData and retrying fresh stream fetch...');
+            this.visitorData = null;
+            await AsyncStorage.removeItem('yt_visitor_data').catch(() => {});
+
+            try {
+                const response = await this.postRequest('player', {
+                    videoId,
+                    playbackContext: {
+                        contentPlaybackContext: {
+                            signatureTimestamp: 19800
+                        }
+                    }
+                }, 'ANDROID_VR', true);
+
+                const streamingData = response.streamingData;
+                const formatsList = [
+                    ...(streamingData?.adaptiveFormats || []),
+                    ...(streamingData?.formats || [])
+                ];
+                const audioFormats = formatsList.filter((format: any) =>
+                    (format.mimeType?.startsWith('audio/') || !format.mimeType) && !!format.url
+                );
+
+                if (audioFormats.length > 0) {
+                    audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+                    return {
+                        id: videoId,
+                        stream_url: audioFormats[0].url,
+                        duration: Math.round(Number(response.videoDetails?.lengthSeconds || 0))
+                    };
+                }
+            } catch (freshErr) {
+                console.error('[InnerTubeClient] Fresh stream fetch failed:', freshErr);
+            }
+        }
+
+        throw lastError || new Error('Unable to extract playable stream URL');
     }
 
     /**
