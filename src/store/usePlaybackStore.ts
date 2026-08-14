@@ -128,6 +128,8 @@ interface PlaybackState {
 }
 
 const pendingResolutions = new Map<string, Promise<string | undefined>>();
+const sessionStreamUrlCache = new Map<string, { url: string; timestamp: number }>();
+const STREAM_URL_EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // Global In-Memory Lyrics Cache Map
 const lyricsCacheMap = new Map<string, { lyrics: ParsedLyric[]; error: string | null }>();
@@ -645,6 +647,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
     },
 
     resolveTrackUri: async (track: Track) => {
+        if (!track || !track.id) return undefined;
+
         // Return existing resolution promise if already running
         if (pendingResolutions.has(track.id)) {
             console.log(`[PlaybackStore] Joining existing stream URL resolution promise for ${track.title}`);
@@ -653,26 +657,21 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
         const promise = (async () => {
             try {
-                if (track.sourceType === 'youtube' && track.uri && !track.uri.includes('placeholder')) {
-                    console.log(`[PlaybackStore] Using in-memory cached stream URL for ${track.title}`);
+                // 1. If it's a local track on device storage, return its file URI
+                if (track.sourceType === 'local' || track.uri?.startsWith('file://') || track.uri?.startsWith('content://')) {
                     return track.uri;
                 }
 
-                // Check if track has been downloaded locally
-                let streamUrl: string | undefined = track.sourceType === 'youtube' ? undefined : track.uri;
-
+                // 2. Check if track has been downloaded locally into downloads DB
                 if (track.sourceType === 'youtube') {
                     try {
                         const download = await getDownloadDB(track.id);
                         if (download && download.localPath) {
                             const fileInfo = await FileSystem.getInfoAsync(download.localPath);
                             if (fileInfo.exists) {
-                                streamUrl = download.localPath;
-                                track.uri = streamUrl; // Update session memory
-                                console.log(`[PlaybackStore] Using local downloaded file: ${streamUrl}`);
-                                return streamUrl;
-                            } else {
-                                console.warn(`[PlaybackStore] Downloaded file not found at: ${download.localPath}, falling back to stream.`);
+                                track.uri = download.localPath;
+                                console.log(`[PlaybackStore] Using local downloaded file: ${download.localPath}`);
+                                return download.localPath;
                             }
                         }
                     } catch (dbErr) {
@@ -680,25 +679,37 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                     }
                 }
 
-                if (!streamUrl && track.sourceType === 'youtube') {
+                // 3. Check in-memory fresh session cache
+                const cached = sessionStreamUrlCache.get(track.id);
+                if (cached && (Date.now() - cached.timestamp < STREAM_URL_EXPIRY_MS)) {
+                    console.log(`[PlaybackStore] Using fresh session cached stream URL for ${track.title}`);
+                    track.uri = cached.url;
+                    return cached.url;
+                }
+
+                // 4. Resolve fresh stream URL from InnerTube
+                if (track.sourceType === 'youtube') {
                     try {
                         const data = await InnerTubeClient.getStreamUrl(track.id);
-                        if (data.stream_url) {
-                            streamUrl = data.stream_url;
-                            track.uri = streamUrl; // Update session memory
-                            return streamUrl;
+                        if (data && data.stream_url) {
+                            sessionStreamUrlCache.set(track.id, { url: data.stream_url, timestamp: Date.now() });
+                            track.uri = data.stream_url;
+                            if (data.duration && (!track.duration || track.duration === 0)) {
+                                track.duration = data.duration;
+                            }
+                            console.log(`[PlaybackStore] Successfully resolved fresh stream URL for ${track.title}`);
+                            return data.stream_url;
                         }
                     } catch (err) {
-                        console.error("Store stream fetch error:", err);
+                        console.error("[PlaybackStore] Fresh stream fetch error:", err);
                     }
                 }
 
-                return streamUrl || track.uri;
+                return undefined;
             } catch (err) {
                 console.error('[PlaybackStore] resolveTrackUri error:', err);
                 return undefined;
             } finally {
-                // Clean up lock once promise settles
                 pendingResolutions.delete(track.id);
             }
         })();

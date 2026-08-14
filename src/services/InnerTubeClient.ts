@@ -525,31 +525,101 @@ export class InnerTubeClient {
         };
     }
 
+    private static parseMusicCardShelf(renderer: any): any {
+        if (!renderer) return null;
+        const titleRun = renderer.title?.runs?.[0];
+        const title = titleRun?.text || 'Unknown';
+
+        let id = titleRun?.navigationEndpoint?.watchEndpoint?.videoId ||
+            titleRun?.navigationEndpoint?.browseEndpoint?.browseId ||
+            renderer.onTap?.watchEndpoint?.videoId ||
+            renderer.onTap?.browseEndpoint?.browseId;
+
+        let itemType: 'track' | 'playlist' | 'artist' | 'album' = 'track';
+        const subtitleRuns = renderer.subtitle?.runs || [];
+        const subtitleText = subtitleRuns.map((r: any) => r.text).join('');
+
+        if (id) {
+            if (id.startsWith('UC')) itemType = 'artist';
+            else if (id.startsWith('MPRE') || id.startsWith('OLAK5uy_') || id.startsWith('FEmusic_album')) itemType = 'album';
+            else if (id.startsWith('VLPL') || id.startsWith('PL') || id.startsWith('RD') || id.startsWith('VL')) itemType = 'playlist';
+        } else {
+            const firstRunText = (subtitleRuns[0]?.text || '').toLowerCase();
+            if (firstRunText.includes('artist')) itemType = 'artist';
+            else if (firstRunText.includes('album')) itemType = 'album';
+            else if (firstRunText.includes('playlist')) itemType = 'playlist';
+        }
+
+        const artist = subtitleText.replace(/^(Artist|Album|Playlist|Song)\s*•?\s*/i, '') || subtitleText || 'YouTube Music';
+        const thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+        const image = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+
+        return {
+            id: id || `card_${title}`,
+            title,
+            artist,
+            image,
+            itemType,
+            sourceType: 'youtube',
+            duration: 0,
+            isTopResult: true
+        };
+    }
+
     // ============================================================================
     // 🌟 API METHODS
     // ============================================================================
 
     /**
-     * Search YouTube Music
+     * Search YouTube Music across all categories (Songs, Artists, Albums, Playlists)
      */
-    public static async search(query: string): Promise<any[]> {
+    public static async search(query: string, filter?: 'all' | 'songs' | 'artists' | 'albums' | 'playlists'): Promise<any[]> {
         try {
-            // Params for filtering "Songs" in YouTube Music Search
-            const response = await this.postRequest('search', {
-                query,
-                params: 'EgWKAQIIAWoKEAkQBRAFGBQQAQ%3D%3D' // Filter for songs
-            });
+            const body: any = { query };
 
+            // Apply category filter params if requested
+            if (filter === 'songs') {
+                body.params = 'EgWKAQIIAWoKEAkQBRAFGBQQAQ%3D%3D'; // Songs filter
+            } else if (filter === 'artists') {
+                body.params = 'EgWKAQIQAWhDEAkQBRAFGBQQAQ%3D%3D'; // Artists filter
+            } else if (filter === 'albums') {
+                body.params = 'EgWKAQIBAWpDEAkQBRAFGBQQAQ%3D%3D'; // Albums filter
+            } else if (filter === 'playlists') {
+                body.params = 'EgWKAQIQAWpDEAkQBRAFGBQQAQ%3D%3D'; // Playlists filter
+            }
+
+            const response = await this.postRequest('search', body);
             const results: any[] = [];
-            const sectionList = response.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer;
+            const tabContent = response.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer;
 
-            if (sectionList && sectionList.contents) {
-                for (const section of sectionList.contents) {
+            if (tabContent && tabContent.contents) {
+                for (const section of tabContent.contents) {
+                    // 1. Top Result Card (musicCardShelfRenderer)
+                    if (section.musicCardShelfRenderer) {
+                        const parsedCard = this.parseMusicCardShelf(section.musicCardShelfRenderer);
+                        if (parsedCard) results.push(parsedCard);
+                    }
+
+                    // 2. Standard Search Shelf (musicShelfRenderer)
                     const shelf = section.musicShelfRenderer;
                     if (shelf && shelf.contents) {
                         for (const item of shelf.contents) {
                             const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
                             if (parsed) results.push(parsed);
+                        }
+                    }
+
+                    // 3. Carousel Shelf (musicCarouselShelfRenderer)
+                    const carousel = section.musicCarouselShelfRenderer;
+                    if (carousel && carousel.contents) {
+                        for (const item of carousel.contents) {
+                            if (item.musicTwoRowItemRenderer) {
+                                const parsed = this.parseMusicTwoRowItem(item.musicTwoRowItemRenderer);
+                                if (parsed) results.push(parsed);
+                            } else if (item.musicResponsiveListItemRenderer) {
+                                const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                                if (parsed) results.push(parsed);
+                            }
                         }
                     }
                 }
