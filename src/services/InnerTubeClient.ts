@@ -726,21 +726,59 @@ export class InnerTubeClient {
 
                     const shelf = section.musicShelfRenderer;
                     if (shelf && shelf.contents) {
+                        const shelfTitle = (
+                            shelf.title?.runs?.[0]?.text ||
+                            shelf.header?.musicHeaderRenderer?.title?.runs?.[0]?.text ||
+                            ''
+                        ).toLowerCase();
+
+                        let defaultType: 'track' | 'artist' | 'album' | 'playlist' = 'track';
+                        if (filter === 'artists' || shelfTitle.includes('artist')) defaultType = 'artist';
+                        else if (filter === 'albums' || shelfTitle.includes('album')) defaultType = 'album';
+                        else if (filter === 'playlists' || shelfTitle.includes('playlist')) defaultType = 'playlist';
+                        else if (filter === 'songs' || shelfTitle.includes('song') || shelfTitle.includes('video')) defaultType = 'track';
+
                         for (const item of shelf.contents) {
                             const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
-                            if (parsed) results.push(parsed);
+                            if (parsed) {
+                                if (filter && filter !== 'all') {
+                                    parsed.itemType = defaultType;
+                                } else if (!parsed.itemType || parsed.itemType === 'track') {
+                                    parsed.itemType = defaultType;
+                                }
+                                results.push(parsed);
+                            }
                         }
                     }
 
                     const carousel = section.musicCarouselShelfRenderer;
                     if (carousel && carousel.contents) {
+                        const carouselTitle = (
+                            carousel.header?.musicCarouselShelfBasicHeaderRenderer?.title?.runs?.[0]?.text ||
+                            ''
+                        ).toLowerCase();
+
+                        let defaultType: 'track' | 'artist' | 'album' | 'playlist' = 'playlist';
+                        if (filter === 'artists' || carouselTitle.includes('artist')) defaultType = 'artist';
+                        else if (filter === 'albums' || carouselTitle.includes('album')) defaultType = 'album';
+                        else if (filter === 'playlists' || carouselTitle.includes('playlist')) defaultType = 'playlist';
+                        else if (filter === 'songs' || carouselTitle.includes('song') || carouselTitle.includes('video')) defaultType = 'track';
+
                         for (const item of carousel.contents) {
+                            let parsed: any = null;
                             if (item.musicTwoRowItemRenderer) {
-                                const parsed = this.parseMusicTwoRowItem(item.musicTwoRowItemRenderer);
-                                if (parsed) results.push(parsed);
+                                parsed = this.parseMusicTwoRowItem(item.musicTwoRowItemRenderer);
                             } else if (item.musicResponsiveListItemRenderer) {
-                                const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
-                                if (parsed) results.push(parsed);
+                                parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                            }
+
+                            if (parsed) {
+                                if (filter && filter !== 'all') {
+                                    parsed.itemType = defaultType;
+                                } else if (!parsed.itemType || parsed.itemType === 'track') {
+                                    parsed.itemType = defaultType;
+                                }
+                                results.push(parsed);
                             }
                         }
                     }
