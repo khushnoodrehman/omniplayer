@@ -265,7 +265,7 @@ export default function PlaylistScreen() {
                         <AppIcon ios="ellipsis" android="ellipsis-vertical" size={24} color={colors.text} />
                     </Pressable>
                 ) : (
-                    <Pressable style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+                    <Pressable onPress={() => router.push('/(tabs)/search')} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
                         <AppIcon ios="magnifyingglass" android="search" size={24} color={colors.text} />
                     </Pressable>
                 )}

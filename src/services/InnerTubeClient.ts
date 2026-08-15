@@ -469,8 +469,10 @@ export class InnerTubeClient {
         const thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
         const image = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
 
-        // Extract Duration (in seconds)
+        // Extract Duration (in seconds) & Plays
         let duration = 0;
+        let plays = '';
+
         const fixedCols = renderer.fixedColumns || [];
         for (const column of fixedCols) {
             const colRuns = column.musicResponsiveListItemFixedColumnRenderer?.text?.runs || [];
@@ -485,18 +487,18 @@ export class InnerTubeClient {
             if (duration > 0) break;
         }
 
-        if (duration === 0) {
-            for (const column of renderer.flexColumns || []) {
-                const colRuns = column.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-                for (const r of colRuns) {
-                    if (r.text && /^\d+:\d+(:\d+)?$/.test(r.text.trim())) {
-                        const parts = r.text.trim().split(':').map(Number);
-                        if (parts.length === 2) duration = parts[0] * 60 + parts[1];
-                        else if (parts.length === 3) duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
-                        break;
-                    }
+        for (const column of renderer.flexColumns || []) {
+            const colRuns = column.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+            for (const r of colRuns) {
+                const txt = r.text?.trim() || '';
+                if (duration === 0 && /^\d+:\d+(:\d+)?$/.test(txt)) {
+                    const parts = txt.split(':').map(Number);
+                    if (parts.length === 2) duration = parts[0] * 60 + parts[1];
+                    else if (parts.length === 3) duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
                 }
-                if (duration > 0) break;
+                if (!plays && (txt.includes('plays') || txt.includes('views') || txt.includes('play'))) {
+                    plays = txt;
+                }
             }
         }
 
@@ -511,9 +513,41 @@ export class InnerTubeClient {
             artist,
             image,
             duration,
+            plays,
             isExplicit,
             sourceType: 'youtube',
             itemType
+        };
+    }
+
+    private static parseMusicMultiRowListItem(renderer: any): any {
+        if (!renderer) return null;
+
+        const title = renderer.title?.runs?.[0]?.text || 'Unknown Episode';
+        const artist = renderer.subtitle?.runs?.map((r: any) => r.text).join('') || 'Podcast';
+        const nav = renderer.onTap || renderer.title?.runs?.[0]?.navigationEndpoint;
+        const id = nav?.watchEndpoint?.videoId || nav?.browseEndpoint?.browseId || renderer.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
+
+        if (!id) return null;
+
+        const thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+        const image = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+
+        let duration = 0;
+        const durText = renderer.playbackProgress?.musicPlaybackProgressRenderer?.durationText?.runs?.map((r: any) => r.text).join('') || '';
+        if (durText) {
+            const match = durText.match(/(\d+)\s*min/);
+            if (match) duration = parseInt(match[1], 10) * 60;
+        }
+
+        return {
+            id,
+            title,
+            artist,
+            image,
+            duration,
+            sourceType: 'youtube' as const,
+            itemType: 'track' as const
         };
     }
 
@@ -523,24 +557,24 @@ export class InnerTubeClient {
         const id = renderer.navigationEndpoint?.watchEndpoint?.videoId ||
             renderer.thumbnailOverlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchPlaylistEndpoint?.playlistId ||
             renderer.navigationEndpoint?.browseEndpoint?.browseId;
+        
+        const title = renderer.title?.runs?.[0]?.text || 'Unknown';
+
+        let itemType: 'track' | 'playlist' | 'artist' | 'album' = 'track';
+        const subtitleRuns = renderer.subtitle?.runs || [];
+        const subtitleText = subtitleRuns.map((r: any) => r.text).join('');
+
+        if (id) {
+            if (id.startsWith('UC') || subtitleText.toLowerCase().includes('artist')) itemType = 'artist';
+            else if (id.startsWith('MPRE') || id.startsWith('OLAK5uy_') || subtitleText.toLowerCase().includes('album')) itemType = 'album';
+            else if (id.startsWith('VL') || id.startsWith('PL') || subtitleText.toLowerCase().includes('playlist')) itemType = 'playlist';
+        }
+
         if (!id) return null;
 
-        const title = renderer.title?.runs?.[0]?.text || 'Unknown';
-        const artist = renderer.subtitle?.runs?.map((r: any) => r.text).join('') || 'YouTube Music';
-        const thumbnails = renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+        const artist = subtitleText || (itemType === 'artist' ? 'Artist' : itemType === 'album' ? 'Album' : 'YouTube Music');
+        const thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
         const image = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
-
-        let itemType: 'track' | 'playlist' | 'artist' | 'album' = 'playlist';
-        if (renderer.navigationEndpoint?.watchEndpoint?.videoId) {
-            itemType = 'track';
-        } else {
-            const browseId = renderer.navigationEndpoint?.browseEndpoint?.browseId || '';
-            if (browseId.startsWith('UC')) {
-                itemType = 'artist';
-            } else if (browseId.startsWith('MPRE') || id.startsWith('OLAK5uy_')) {
-                itemType = 'album';
-            }
-        }
 
         return {
             id,
@@ -568,15 +602,12 @@ export class InnerTubeClient {
         const subtitleText = subtitleRuns.map((r: any) => r.text).join('');
 
         if (id) {
-            if (id.startsWith('UC')) itemType = 'artist';
-            else if (id.startsWith('MPRE') || id.startsWith('OLAK5uy_') || id.startsWith('FEmusic_album')) itemType = 'album';
-            else if (id.startsWith('VLPL') || id.startsWith('PL') || id.startsWith('RD') || id.startsWith('VL')) itemType = 'playlist';
-        } else {
-            const firstRunText = (subtitleRuns[0]?.text || '').toLowerCase();
-            if (firstRunText.includes('artist')) itemType = 'artist';
-            else if (firstRunText.includes('album')) itemType = 'album';
-            else if (firstRunText.includes('playlist')) itemType = 'playlist';
+            if (id.startsWith('UC') || subtitleText.toLowerCase().includes('artist')) itemType = 'artist';
+            else if (id.startsWith('MPRE') || id.startsWith('OLAK5uy_') || id.startsWith('FEmusic_album') || subtitleText.toLowerCase().includes('album')) itemType = 'album';
+            else if (id.startsWith('VLPL') || id.startsWith('PL') || id.startsWith('RD') || id.startsWith('VL') || subtitleText.toLowerCase().includes('playlist')) itemType = 'playlist';
         }
+
+        if (!id) id = `card_${title}`;
 
         const artist = subtitleText.replace(/^(Artist|Album|Playlist|Song)\s*•?\s*/i, '') || subtitleText || 'YouTube Music';
         const thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
@@ -741,6 +772,44 @@ export class InnerTubeClient {
      */
     public static async search(query: string, filter?: 'all' | 'songs' | 'artists' | 'albums' | 'playlists'): Promise<any[]> {
         try {
+            // If playlists filter, query both Featured and Community playlists to ensure complete results
+            if (filter === 'playlists') {
+                const [featuredRes, communityRes] = await Promise.all([
+                    this.postRequest('search', { query, params: 'EgeKAQQoADgBahIQBBADEAUQCRAQEAoQDhAREBU=' }).catch(() => null),
+                    this.postRequest('search', { query, params: 'EgeKAQQoAEABahIQBBADEAUQCRAQEAoQDhAREBU=' }).catch(() => null)
+                ]);
+                const results: any[] = [];
+                const parseResponse = (res: any) => {
+                    if (!res) return;
+                    const tabContent = res.contents?.tabbedSearchResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer;
+                    if (tabContent?.contents) {
+                        for (const section of tabContent.contents) {
+                            if (section.musicShelfRenderer?.contents) {
+                                for (const item of section.musicShelfRenderer.contents) {
+                                    const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                                    if (parsed) {
+                                        parsed.itemType = 'playlist';
+                                        if (!results.some(r => r.id === parsed.id)) results.push(parsed);
+                                    }
+                                }
+                            }
+                            if (section.itemSectionRenderer?.contents) {
+                                for (const item of section.itemSectionRenderer.contents) {
+                                    const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                                    if (parsed) {
+                                        parsed.itemType = 'playlist';
+                                        if (!results.some(r => r.id === parsed.id)) results.push(parsed);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                parseResponse(featuredRes);
+                parseResponse(communityRes);
+                return results;
+            }
+
             const body: any = { query };
 
             // Apply official category filter params
@@ -750,8 +819,6 @@ export class InnerTubeClient {
                 body.params = 'EgWKAQIgAWoSEAQQAxAFEAkQEBAKEA4QERAV'; // Official YT Music Artists filter
             } else if (filter === 'albums') {
                 body.params = 'EgWKAQIYAWoSEAQQAxAFEAkQEBAKEA4QERAV'; // Official YT Music Albums filter
-            } else if (filter === 'playlists') {
-                body.params = 'EgeKAQQoAEABahIQBBADEAUQCRAQEAoQDhAREBU='; // Official YT Music Playlists filter
             }
 
             const response = await this.postRequest('search', body);
@@ -776,7 +843,7 @@ export class InnerTubeClient {
                         let defaultType: 'track' | 'artist' | 'album' | 'playlist' = 'track';
                         if (filter === 'artists' || shelfTitle.includes('artist')) defaultType = 'artist';
                         else if (filter === 'albums' || shelfTitle.includes('album')) defaultType = 'album';
-                        else if (filter === 'playlists' || shelfTitle.includes('playlist')) defaultType = 'playlist';
+                        else if (shelfTitle.includes('playlist')) defaultType = 'playlist';
                         else if (filter === 'songs' || shelfTitle.includes('song') || shelfTitle.includes('video')) defaultType = 'track';
 
                         for (const item of shelf.contents) {
@@ -802,7 +869,7 @@ export class InnerTubeClient {
                         let defaultType: 'track' | 'artist' | 'album' | 'playlist' = 'playlist';
                         if (filter === 'artists' || carouselTitle.includes('artist')) defaultType = 'artist';
                         else if (filter === 'albums' || carouselTitle.includes('album')) defaultType = 'album';
-                        else if (filter === 'playlists' || carouselTitle.includes('playlist')) defaultType = 'playlist';
+                        else if (carouselTitle.includes('playlist')) defaultType = 'playlist';
                         else if (filter === 'songs' || carouselTitle.includes('song') || carouselTitle.includes('video')) defaultType = 'track';
 
                         for (const item of carousel.contents) {
@@ -832,7 +899,6 @@ export class InnerTubeClient {
                                 if (parsed) {
                                     if (filter === 'artists') parsed.itemType = 'artist';
                                     else if (filter === 'albums') parsed.itemType = 'album';
-                                    else if (filter === 'playlists') parsed.itemType = 'playlist';
                                     else if (filter === 'songs') parsed.itemType = 'track';
                                     results.push(parsed);
                                 }
@@ -848,6 +914,8 @@ export class InnerTubeClient {
             return [];
         }
     }
+
+
 
     /**
      * Fetch Home Screen Data (Personalized or Guest Charts)
@@ -1184,7 +1252,10 @@ export class InnerTubeClient {
             // Parse metadata (Title, Description, Image)
             const header = response.header?.musicHeaderRenderer ||
                 response.header?.musicDetailHeaderRenderer ||
-                response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.musicResponsiveHeaderRenderer;
+                response.header?.musicVisualHeaderRenderer ||
+                response.header?.musicImmersiveHeaderRenderer ||
+                response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.musicResponsiveHeaderRenderer ||
+                response.contents?.twoColumnBrowseResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.musicResponsiveHeaderRenderer;
 
             let title = header?.title?.runs?.[0]?.text;
             let description = header?.description?.runs?.[0]?.text;
@@ -1209,32 +1280,29 @@ export class InnerTubeClient {
             if (!title) title = 'Playlist';
             if (!description) description = 'YouTube Music Playlist';
 
-            // Extract songs
+            // Extract songs & episodes
             const songs: any[] = [];
 
             // Find section list in any potential layout location
             const sectionList = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer ||
                                 response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer ||
+                                response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer ||
                                 response.contents?.sectionListRenderer;
 
-            let shelfRenderer: any = null;
             if (sectionList && sectionList.contents) {
                 for (const section of sectionList.contents) {
-                    if (section.musicPlaylistShelfRenderer) {
-                        shelfRenderer = section.musicPlaylistShelfRenderer;
-                        break;
+                    const shelf = section.musicPlaylistShelfRenderer || section.musicShelfRenderer || section.itemSectionRenderer;
+                    if (shelf && shelf.contents) {
+                        for (const item of shelf.contents) {
+                            if (item.musicResponsiveListItemRenderer) {
+                                const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                                if (parsed && !songs.some(s => s.id === parsed.id)) songs.push(parsed);
+                            } else if (item.musicMultiRowListItemRenderer) {
+                                const parsed = this.parseMusicMultiRowListItem(item.musicMultiRowListItemRenderer);
+                                if (parsed && !songs.some(s => s.id === parsed.id)) songs.push(parsed);
+                            }
+                        }
                     }
-                    if (section.musicShelfRenderer) {
-                        shelfRenderer = section.musicShelfRenderer;
-                        break;
-                    }
-                }
-            }
-
-            if (shelfRenderer && shelfRenderer.contents) {
-                for (const item of shelfRenderer.contents) {
-                    const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
-                    if (parsed) songs.push(parsed);
                 }
             }
 

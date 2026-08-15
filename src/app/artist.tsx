@@ -92,7 +92,7 @@ export default function ArtistScreen() {
                     <AppIcon ios="arrow.left" android="arrow-back" size={24} color="#fff" />
                 </Pressable>
                 <View style={{ flex: 1 }} />
-                <Pressable style={({ pressed }) => [styles.iconButtonFloating, pressed && styles.pressed]}>
+                <Pressable onPress={() => router.push('/(tabs)/search')} style={({ pressed }) => [styles.iconButtonFloating, pressed && styles.pressed]}>
                     <AppIcon ios="magnifyingglass" android="search" size={24} color="#fff" />
                 </Pressable>
             </View>
@@ -189,9 +189,15 @@ export default function ArtistScreen() {
                                             {track.artist}
                                         </RNText>
                                     </View>
-                                    <RNText style={[styles.songDuration, { color: colors.textSecondary }]}>
-                                        {formatDuration(track.duration)}
-                                    </RNText>
+                                    {(track.duration && track.duration > 0) ? (
+                                        <RNText style={[styles.songDuration, { color: colors.textSecondary }]}>
+                                            {formatDuration(track.duration)}
+                                        </RNText>
+                                    ) : track.plays ? (
+                                        <RNText style={[styles.songDuration, { color: colors.textSecondary, fontSize: 11 }]}>
+                                            {track.plays}
+                                        </RNText>
+                                    ) : null}
                                     <Pressable onPress={() => handleTrackOptions(track)} style={styles.moreButton}>
                                         <AppIcon ios="ellipsis" android="ellipsis-vertical" size={18} color={colors.textSecondary} />
                                     </Pressable>
