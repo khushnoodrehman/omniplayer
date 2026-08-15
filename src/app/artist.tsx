@@ -92,9 +92,6 @@ export default function ArtistScreen() {
                     <AppIcon ios="arrow.left" android="arrow-back" size={24} color="#fff" />
                 </Pressable>
                 <View style={{ flex: 1 }} />
-                <Pressable onPress={() => router.push('/(tabs)/search')} style={({ pressed }) => [styles.iconButtonFloating, pressed && styles.pressed]}>
-                    <AppIcon ios="magnifyingglass" android="search" size={24} color="#fff" />
-                </Pressable>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -118,7 +115,9 @@ export default function ArtistScreen() {
                         onPress={() => setIsSubscribed(!isSubscribed)}
                         style={({ pressed }) => [
                             styles.actionBtn,
-                            { backgroundColor: isSubscribed ? colors.backgroundSelected : colors.backgroundElement, borderColor: colors.cardBorder },
+                            isSubscribed
+                                ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                                : { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
                             pressed && styles.pressed
                         ]}
                     >
@@ -126,14 +125,20 @@ export default function ArtistScreen() {
                             ios={isSubscribed ? "checkmark" : "plus"}
                             android={isSubscribed ? "checkmark" : "add"}
                             size={16}
-                            color={isSubscribed ? colors.accent : colors.text}
+                            color={isSubscribed ? (colors.playIconColor || '#fff') : colors.text}
                         />
-                        <RNText style={[styles.actionBtnText, { color: isSubscribed ? colors.accent : colors.text }]}>
+                        <RNText
+                            style={[
+                                styles.actionBtnText,
+                                { color: isSubscribed ? (colors.playIconColor || '#fff') : colors.text }
+                            ]}
+                        >
                             {isSubscribed ? "Subscribed" : "Subscribe"}
                         </RNText>
                     </Pressable>
 
                     <Pressable
+                        onPress={() => Alert.alert("Artist Radio", `Starting radio for ${artist.name}...`)}
                         style={({ pressed }) => [
                             styles.actionBtn,
                             { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder },
@@ -189,7 +194,7 @@ export default function ArtistScreen() {
                                             {track.artist}
                                         </RNText>
                                     </View>
-                                    {(track.duration && track.duration > 0) ? (
+                                    {track.duration > 0 ? (
                                         <RNText style={[styles.songDuration, { color: colors.textSecondary }]}>
                                             {formatDuration(track.duration)}
                                         </RNText>
