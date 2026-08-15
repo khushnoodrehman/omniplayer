@@ -389,45 +389,65 @@ export class InnerTubeClient {
     private static parseMusicResponsiveListItem(renderer: any): any {
         if (!renderer) return null;
 
-        // Extract Video ID / Playlist ID / Artist ID
-        let id = renderer.playlistItemData?.videoId || renderer.navigationEndpoint?.watchEndpoint?.videoId;
-        let isPlayable = !!id;
+        let id: string = '';
         let itemType: 'track' | 'playlist' | 'artist' | 'album' = 'track';
 
-        if (!id) {
-            const browseId = renderer.navigationEndpoint?.browseEndpoint?.browseId ||
-                renderer.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId;
-            if (browseId) {
-                id = browseId;
-                if (browseId.startsWith('UC')) {
-                    itemType = 'artist';
-                } else if (browseId.startsWith('MPRE') || browseId.startsWith('FEmusic_album')) {
-                    itemType = 'album';
-                } else {
-                    itemType = 'playlist';
-                }
+        // Check primary and column navigation endpoints
+        const directNav = renderer.navigationEndpoint;
+        const titleRun = renderer.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0];
+        const titleNav = titleRun?.navigationEndpoint;
+
+        const browseEndpoint = directNav?.browseEndpoint || titleNav?.browseEndpoint;
+        const watchEndpoint = directNav?.watchEndpoint || titleNav?.watchEndpoint || renderer.playlistItemData;
+
+        if (browseEndpoint?.browseId) {
+            const browseId: string = browseEndpoint.browseId;
+            id = browseId;
+            const pageType = browseEndpoint.browsePageType || browseEndpoint.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType || '';
+
+            if (browseId.startsWith('UC') || pageType === 'MUSIC_PAGE_TYPE_ARTIST') {
+                itemType = 'artist';
+            } else if (browseId.startsWith('MPRE') || browseId.startsWith('OLAK5uy_') || browseId.startsWith('FEmusic_album') || pageType === 'MUSIC_PAGE_TYPE_ALBUM') {
+                itemType = 'album';
+            } else if (browseId.startsWith('VL') || browseId.startsWith('PL') || browseId.startsWith('RD') || pageType === 'MUSIC_PAGE_TYPE_PLAYLIST') {
+                itemType = 'playlist';
+            } else {
+                itemType = 'playlist';
             }
+        } else if (watchEndpoint?.videoId) {
+            id = watchEndpoint.videoId;
+            itemType = 'track';
         }
 
-        if (!id) {
-            // Check if nested in second column or check first column title watchEndpoint
-            const titleRun = renderer.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0];
-            id = titleRun?.navigationEndpoint?.watchEndpoint?.videoId || titleRun?.navigationEndpoint?.browseEndpoint?.browseId;
-            isPlayable = !!titleRun?.navigationEndpoint?.watchEndpoint?.videoId;
-            if (id && !isPlayable) {
-                if (id.startsWith('UC')) itemType = 'artist';
-                else if (id.startsWith('MPRE')) itemType = 'album';
-                else itemType = 'playlist';
+        // Subtitle inspection for metadata & secondary category resolution
+        const runs = renderer.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+        const subtitleText = runs.map((r: any) => r.text).join('').toLowerCase();
+
+        if (subtitleText.startsWith('artist') || subtitleText.includes('• artist') || subtitleText.includes('subscribers') || subtitleText.includes('monthly audience')) {
+            itemType = 'artist';
+            // Find artist browseId if id is missing or not a UC channel ID
+            if (!id || !id.startsWith('UC')) {
+                for (const run of runs) {
+                    if (run.navigationEndpoint?.browseEndpoint?.browseId?.startsWith('UC')) {
+                        id = run.navigationEndpoint.browseEndpoint.browseId;
+                        break;
+                    }
+                }
             }
+        } else if (subtitleText.startsWith('album') || subtitleText.includes('• album') || subtitleText.startsWith('ep •') || subtitleText.startsWith('single •')) {
+            itemType = 'album';
+        } else if (subtitleText.startsWith('playlist') || subtitleText.includes('• playlist')) {
+            itemType = 'playlist';
+        } else if (subtitleText.startsWith('song') || subtitleText.startsWith('video')) {
+            itemType = 'track';
         }
 
         if (!id) return null;
 
         // Extract Title
-        const title = renderer.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text || 'Unknown';
+        const title = titleRun?.text || 'Unknown';
 
         // Extract Artists
-        const runs = renderer.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
         const artistNames: string[] = [];
         for (const run of runs) {
             if (run.navigationEndpoint?.browseEndpoint?.browseId?.startsWith('UC') ||
@@ -443,7 +463,7 @@ export class InnerTubeClient {
                 artistNames.push(text);
             }
         }
-        const artist = artistNames.join(', ') || 'Unknown Artist';
+        const artist = artistNames.join(', ') || (itemType === 'artist' ? 'Artist' : itemType === 'album' ? 'Album' : 'YouTube Music');
 
         // Extract Thumbnails
         const thumbnails = renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
@@ -685,6 +705,27 @@ export class InnerTubeClient {
                             }
                         }
                     }
+
+                    // 4. Item Section Renderer (Standard list wrapper)
+                    const itemSection = section.itemSectionRenderer;
+                    if (itemSection && itemSection.contents) {
+                        for (const item of itemSection.contents) {
+                            if (item.musicResponsiveListItemRenderer) {
+                                const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                                if (parsed) {
+                                    if (parsed.itemType === 'artist') {
+                                        if (!result.artists.some(a => a.id === parsed.id)) result.artists.push(parsed);
+                                    } else if (parsed.itemType === 'album') {
+                                        if (!result.albums.some(a => a.id === parsed.id)) result.albums.push(parsed);
+                                    } else if (parsed.itemType === 'playlist') {
+                                        if (!result.playlists.some(p => p.id === parsed.id)) result.playlists.push(parsed);
+                                    } else {
+                                        if (!result.songs.some(s => s.id === parsed.id)) result.songs.push(parsed);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -702,15 +743,15 @@ export class InnerTubeClient {
         try {
             const body: any = { query };
 
-            // Apply category filter params if requested
+            // Apply official category filter params
             if (filter === 'songs') {
-                body.params = 'EgWKAQIIAWoKEAkQBRAFGBQQAQ%3D%3D'; // Songs filter
+                body.params = 'EgWKAQIIAWoSEAQQAxAFEAkQEBAKEA4QERAV'; // Official YT Music Songs filter
             } else if (filter === 'artists') {
-                body.params = 'EgWKAQIQAWhDEAkQBRAFGBQQAQ%3D%3D'; // Artists filter
+                body.params = 'EgWKAQIgAWoSEAQQAxAFEAkQEBAKEA4QERAV'; // Official YT Music Artists filter
             } else if (filter === 'albums') {
-                body.params = 'EgWKAQIBAWpDEAkQBRAFGBQQAQ%3D%3D'; // Albums filter
+                body.params = 'EgWKAQIYAWoSEAQQAxAFEAkQEBAKEA4QERAV'; // Official YT Music Albums filter
             } else if (filter === 'playlists') {
-                body.params = 'EgWKAQIQAWpDEAkQBRAFGBQQAQ%3D%3D'; // Playlists filter
+                body.params = 'EgeKAQQoAEABahIQBBADEAUQCRAQEAoQDhAREBU='; // Official YT Music Playlists filter
             }
 
             const response = await this.postRequest('search', body);
@@ -779,6 +820,22 @@ export class InnerTubeClient {
                                     parsed.itemType = defaultType;
                                 }
                                 results.push(parsed);
+                            }
+                        }
+                    }
+
+                    const itemSection = section.itemSectionRenderer;
+                    if (itemSection && itemSection.contents) {
+                        for (const item of itemSection.contents) {
+                            if (item.musicResponsiveListItemRenderer) {
+                                const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer);
+                                if (parsed) {
+                                    if (filter === 'artists') parsed.itemType = 'artist';
+                                    else if (filter === 'albums') parsed.itemType = 'album';
+                                    else if (filter === 'playlists') parsed.itemType = 'playlist';
+                                    else if (filter === 'songs') parsed.itemType = 'track';
+                                    results.push(parsed);
+                                }
                             }
                         }
                     }
@@ -1200,8 +1257,19 @@ export class InnerTubeClient {
      */
     public static async getArtistDetails(channelId: string): Promise<any> {
         try {
+            let targetBrowseId = channelId;
+
+            // If not a valid channel browseId (e.g. video ID or card ID or plain name), resolve via artist search
+            if (!targetBrowseId.startsWith('UC') && !targetBrowseId.startsWith('FE')) {
+                const searchResults = await this.search(channelId.replace(/^card_/, ''), 'artists');
+                const matched = searchResults.find(r => r.id && r.id.startsWith('UC'));
+                if (matched) {
+                    targetBrowseId = matched.id;
+                }
+            }
+
             const response = await this.postRequest('browse', {
-                browseId: channelId
+                browseId: targetBrowseId
             });
 
             const header = response.header?.musicImmersiveHeaderRenderer || response.header?.musicVisualHeaderRenderer;

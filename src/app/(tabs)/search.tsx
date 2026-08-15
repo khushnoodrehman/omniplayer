@@ -383,10 +383,17 @@ export default function SearchScreen() {
   }, []);
 
   // API & Search States
+  const [structuredData, setStructuredData] = useState<StructuredSearchResults>({
+    topResult: null,
+    songs: [],
+    artists: [],
+    albums: [],
+    playlists: []
+  });
   const [apiResults, setApiResults] = useState<any[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
-  const categoryCacheRef = useRef<{ [key: string]: any[] }>({});
+  const categoryCacheRef = useRef<{ [key: string]: any }>({});
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -406,13 +413,18 @@ export default function SearchScreen() {
   useEffect(() => {
     const trimmed = searchText.trim();
     if (!trimmed) {
+      setStructuredData({ topResult: null, songs: [], artists: [], albums: [], playlists: [] });
       setApiResults([]);
       return;
     }
 
     const cacheKey = `${trimmed}_${activeChip}_${searchMode}`;
     if (categoryCacheRef.current[cacheKey]) {
-      setApiResults(categoryCacheRef.current[cacheKey]);
+      if (activeChip === 'All') {
+        setStructuredData(categoryCacheRef.current[cacheKey]);
+      } else {
+        setApiResults(categoryCacheRef.current[cacheKey]);
+      }
       return;
     }
 
@@ -420,16 +432,20 @@ export default function SearchScreen() {
       setIsFetching(true);
       try {
         if (searchMode === 'online' && activeChip !== 'Local') {
-          let filterCategory: 'all' | 'songs' | 'artists' | 'albums' | 'playlists' | undefined = undefined;
-          if (activeChip === 'Songs') filterCategory = 'songs';
-          else if (activeChip === 'Artists') filterCategory = 'artists';
-          else if (activeChip === 'Albums') filterCategory = 'albums';
-          else if (activeChip === 'Playlists') filterCategory = 'playlists';
-          else filterCategory = 'all';
+          if (activeChip === 'All') {
+            const structured = await InnerTubeClient.searchStructured(trimmed);
+            categoryCacheRef.current[cacheKey] = structured;
+            setStructuredData(structured);
+          } else {
+            let filterCategory: 'songs' | 'artists' | 'albums' | 'playlists' = 'songs';
+            if (activeChip === 'Artists') filterCategory = 'artists';
+            else if (activeChip === 'Albums') filterCategory = 'albums';
+            else if (activeChip === 'Playlists') filterCategory = 'playlists';
 
-          const results = await InnerTubeClient.search(trimmed, filterCategory);
-          categoryCacheRef.current[cacheKey] = results;
-          setApiResults(results);
+            const results = await InnerTubeClient.search(trimmed, filterCategory);
+            categoryCacheRef.current[cacheKey] = results;
+            setApiResults(results);
+          }
         } else {
           const filtered = audioFiles.filter(track => {
             const title = (track.filename || '').toLowerCase();
@@ -482,7 +498,7 @@ export default function SearchScreen() {
   // 2. Play YouTube Track Logic (Stream Extraction)
   const handlePlayYouTubeTrack = async (trackInfo: any) => {
     if (trackInfo.sourceType === 'local') {
-      const queue: Track[] = apiResults
+      const queue: Track[] = (activeChip === 'All' ? structuredData.songs : apiResults)
         .filter(r => r !== null && r !== undefined)
         .map(r => ({
           id: r.id || '',
@@ -512,7 +528,8 @@ export default function SearchScreen() {
           uri: data.stream_url
         };
 
-        const queue: Track[] = apiResults
+        const queueSource = activeChip === 'All' ? structuredData.songs : apiResults;
+        const queue: Track[] = queueSource
           .filter(r => r && (r.itemType === 'track' || !r.itemType))
           .map(r => ({
             id: r.id || '',
@@ -555,7 +572,7 @@ export default function SearchScreen() {
   };
 
   const isSearchingUI = searchText.length > 0;
-  const topResult = apiResults.length > 0 && apiResults[0]?.isTopResult ? apiResults[0] : null;
+  const topResult = activeChip === 'All' ? structuredData.topResult : (apiResults.length > 0 && apiResults[0]?.isTopResult ? apiResults[0] : null);
   const accountInfo = usePlaybackStore((state) => state.accountInfo);
 
   return (
@@ -686,170 +703,155 @@ export default function SearchScreen() {
                 </View>
               ) : (
                 <>
-                  {/* Top Result Card (if top item is top match) */}
-                  {topResult && (
-                    <View style={{ paddingHorizontal: 16, gap: 12 }}>
-                      <RNText style={[styles.resultsSectionTitle, { color: colors.accent }]}>Top Result</RNText>
-                      <Pressable
-                        onPress={() => {
-                          if (topResult.itemType === 'artist') {
-                            router.push({ pathname: '/artist', params: { id: topResult.id, name: topResult.title, image: topResult.image } });
-                          } else if (topResult.itemType === 'album' || topResult.itemType === 'playlist') {
-                            router.push({ pathname: '/playlist', params: { id: topResult.id, type: 'online' } });
-                          } else {
-                            handlePlayYouTubeTrack(topResult);
-                          }
-                        }}
-                        style={({ pressed }) => [styles.topResultCard, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && styles.pressedCard]}
-                      >
-                        <View style={styles.topResultRow}>
-                          <View style={[
-                            styles.topResultImageContainer, 
-                            { backgroundColor: colors.background },
-                            topResult.itemType === 'artist' && { borderRadius: 60 }
-                          ]}>
-                            <Image 
-                              source={{ uri: topResult.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }} 
-                              style={[styles.topResultImage, topResult.itemType === 'artist' && { borderRadius: 60 }]} 
-                              resizeMode="cover" 
-                            />
-                            {loadingTrackId === topResult.id && (
-                              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}>
-                                <ActivityIndicator size="small" color="#fff" />
+                  {/* ==================== TAB 1: ALL ==================== */}
+                  {activeChip === 'All' && (
+                    <View style={{ gap: 24 }}>
+                      {/* Top Result Card */}
+                      {topResult && (
+                        <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                          <RNText style={[styles.resultsSectionTitle, { color: colors.accent }]}>Top Result</RNText>
+                          <Pressable
+                            onPress={() => {
+                              if (topResult.itemType === 'artist') {
+                                router.push({ pathname: '/artist', params: { id: topResult.id, name: topResult.title, image: topResult.image } });
+                              } else if (topResult.itemType === 'album' || topResult.itemType === 'playlist') {
+                                router.push({ pathname: '/playlist', params: { id: topResult.id, type: 'online' } });
+                              } else {
+                                handlePlayYouTubeTrack(topResult);
+                              }
+                            }}
+                            style={({ pressed }) => [styles.topResultCard, { backgroundColor: colors.backgroundElement, borderColor: colors.cardBorder }, pressed && styles.pressedCard]}
+                          >
+                            <View style={styles.topResultRow}>
+                              <View style={[
+                                styles.topResultImageContainer, 
+                                { backgroundColor: colors.background },
+                                topResult.itemType === 'artist' && { borderRadius: 60 }
+                              ]}>
+                                <Image 
+                                  source={{ uri: topResult.image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png' }} 
+                                  style={[styles.topResultImage, topResult.itemType === 'artist' && { borderRadius: 60 }]} 
+                                  resizeMode="cover" 
+                                />
+                                {loadingTrackId === topResult.id && (
+                                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' }]}>
+                                    <ActivityIndicator size="small" color="#fff" />
+                                  </View>
+                                )}
                               </View>
-                            )}
-                          </View>
-                          <View style={styles.topResultTextContainer}>
-                            <View style={styles.bestMatchTagRow}>
-                              <View style={[styles.bestMatchTag, { backgroundColor: colors.accentLight }]}>
-                                <RNText style={[styles.bestMatchTagText, { color: colors.accent }]}>
-                                  {topResult.itemType === 'artist' ? 'TOP ARTIST' : topResult.itemType === 'album' ? 'TOP ALBUM' : topResult.itemType === 'playlist' ? 'TOP PLAYLIST' : 'TOP MATCH'}
-                                </RNText>
+                              <View style={styles.topResultTextContainer}>
+                                <View style={styles.bestMatchTagRow}>
+                                  <View style={[styles.bestMatchTag, { backgroundColor: colors.accentLight }]}>
+                                    <RNText style={[styles.bestMatchTagText, { color: colors.accent }]}>
+                                      {topResult.itemType === 'artist' ? 'TOP ARTIST' : topResult.itemType === 'album' ? 'TOP ALBUM' : topResult.itemType === 'playlist' ? 'TOP PLAYLIST' : 'TOP MATCH'}
+                                    </RNText>
+                                  </View>
+                                </View>
+                                <RNText style={[styles.topResultSongTitle, { color: loadingTrackId === topResult.id ? colors.accent : colors.text }]} numberOfLines={2}>{safeString(topResult.title, 'Unknown')}</RNText>
+                                <RNText style={[styles.topResultArtist, { color: colors.textSecondary }]} numberOfLines={1}>{safeString(topResult.artist, 'YouTube Music')}</RNText>
+                                
+                                {/* Dynamic Top Result Actions */}
+                                {topResult.itemType === 'artist' ? (
+                                  <Pressable
+                                    onPress={() => router.push({ pathname: '/artist', params: { id: topResult.id, name: topResult.title, image: topResult.image } })}
+                                    style={[styles.topResultNavButton, { backgroundColor: colors.accent }]}
+                                  >
+                                    <RNText style={[styles.topResultNavButtonText, { color: colors.playIconColor || '#fff' }]}>View Artist</RNText>
+                                    <AppIcon ios="arrow.right" android="arrow-forward" size={16} color={colors.playIconColor || '#fff'} />
+                                  </Pressable>
+                                ) : (topResult.itemType === 'album' || topResult.itemType === 'playlist') ? (
+                                  <Pressable
+                                    onPress={() => router.push({ pathname: '/playlist', params: { id: topResult.id, type: 'online' } })}
+                                    style={[styles.topResultNavButton, { backgroundColor: colors.accent }]}
+                                  >
+                                    <RNText style={[styles.topResultNavButtonText, { color: colors.playIconColor || '#fff' }]}>
+                                      {topResult.itemType === 'album' ? 'View Album' : 'View Playlist'}
+                                    </RNText>
+                                    <AppIcon ios="arrow.right" android="arrow-forward" size={16} color={colors.playIconColor || '#fff'} />
+                                  </Pressable>
+                                ) : (
+                                  <View style={styles.topResultActionsRow}>
+                                    <Pressable
+                                      onPress={() => handlePlayYouTubeTrack(topResult)}
+                                      style={[styles.topResultPlayButton, { backgroundColor: colors.accent }]}
+                                    >
+                                      {loadingTrackId === topResult.id ? (
+                                        <ActivityIndicator size="small" color={colors.playIconColor} />
+                                      ) : (
+                                        <AppIcon ios="play.fill" android="play" size={24} color={colors.playIconColor} />
+                                      )}
+                                    </Pressable>
+                                    <Pressable
+                                      onPress={() => toggleFavorite({
+                                        id: topResult.id,
+                                        title: safeString(topResult.title),
+                                        artist: safeString(topResult.artist),
+                                        image: safeString(topResult.image),
+                                        duration: topResult.duration || 0,
+                                        sourceType: 'youtube'
+                                      })}
+                                      style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}
+                                    >
+                                      <AppIcon
+                                        ios={favoriteTracks.includes(topResult.id) ? 'heart.fill' : 'heart'}
+                                        android={favoriteTracks.includes(topResult.id) ? 'heart' : 'heart-outline'}
+                                        size={20}
+                                        color={favoriteTracks.includes(topResult.id) ? colors.accent : colors.textSecondary}
+                                      />
+                                    </Pressable>
+                                    <Pressable
+                                      onPress={() => handleOpenDownload(topResult)}
+                                      style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}
+                                    >
+                                      <AppIcon ios="arrow.down.to.line" android="download-outline" size={20} color={colors.textSecondary} />
+                                    </Pressable>
+                                  </View>
+                                )}
                               </View>
                             </View>
-                            <RNText style={[styles.topResultSongTitle, { color: loadingTrackId === topResult.id ? colors.accent : colors.text }]} numberOfLines={2}>{safeString(topResult.title, 'Unknown')}</RNText>
-                            <RNText style={[styles.topResultArtist, { color: colors.textSecondary }]} numberOfLines={1}>{safeString(topResult.artist, 'YouTube Music')}</RNText>
-                            
-                            {/* Dynamic Top Result Actions */}
-                            {topResult.itemType === 'artist' ? (
-                              <Pressable
-                                onPress={() => router.push({ pathname: '/artist', params: { id: topResult.id, name: topResult.title, image: topResult.image } })}
-                                style={[styles.topResultNavButton, { backgroundColor: colors.accent }]}
-                              >
-                                <RNText style={[styles.topResultNavButtonText, { color: colors.playIconColor || '#fff' }]}>View Artist</RNText>
-                                <AppIcon ios="arrow.right" android="arrow-forward" size={16} color={colors.playIconColor || '#fff'} />
+                          </Pressable>
+                        </View>
+                      )}
+
+                      {/* Artists Horizontal Section */}
+                      {structuredData.artists.length > 0 && (
+                        <View style={{ gap: 12 }}>
+                          <View style={styles.sectionHeaderRow}>
+                            <RNText style={[styles.resultsSectionTitle, { color: colors.text }]}>Artists</RNText>
+                            {structuredData.artists.length > 3 && (
+                              <Pressable onPress={() => setActiveChip('Artists')} style={{ padding: 4 }}>
+                                <RNText style={[styles.seeAllText, { color: colors.accent }]}>See all</RNText>
                               </Pressable>
-                            ) : (topResult.itemType === 'album' || topResult.itemType === 'playlist') ? (
-                              <Pressable
-                                onPress={() => router.push({ pathname: '/playlist', params: { id: topResult.id, type: 'online' } })}
-                                style={[styles.topResultNavButton, { backgroundColor: colors.accent }]}
-                              >
-                                <RNText style={[styles.topResultNavButtonText, { color: colors.playIconColor || '#fff' }]}>
-                                  {topResult.itemType === 'album' ? 'View Album' : 'View Playlist'}
-                                </RNText>
-                                <AppIcon ios="arrow.right" android="arrow-forward" size={16} color={colors.playIconColor || '#fff'} />
-                              </Pressable>
-                            ) : (
-                              <View style={styles.topResultActionsRow}>
-                                <Pressable
-                                  onPress={() => handlePlayYouTubeTrack(topResult)}
-                                  style={[styles.topResultPlayButton, { backgroundColor: colors.accent }]}
-                                >
-                                  {loadingTrackId === topResult.id ? (
-                                    <ActivityIndicator size="small" color={colors.playIconColor} />
-                                  ) : (
-                                    <AppIcon ios="play.fill" android="play" size={24} color={colors.playIconColor} />
-                                  )}
-                                </Pressable>
-                                <Pressable
-                                  onPress={() => toggleFavorite({
-                                    id: topResult.id,
-                                    title: safeString(topResult.title),
-                                    artist: safeString(topResult.artist),
-                                    image: safeString(topResult.image),
-                                    duration: topResult.duration || 0,
-                                    sourceType: 'youtube'
-                                  })}
-                                  style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}
-                                >
-                                  <AppIcon
-                                    ios={favoriteTracks.includes(topResult.id) ? 'heart.fill' : 'heart'}
-                                    android={favoriteTracks.includes(topResult.id) ? 'heart' : 'heart-outline'}
-                                    size={20}
-                                    color={favoriteTracks.includes(topResult.id) ? colors.accent : colors.textSecondary}
-                                  />
-                                </Pressable>
-                                <Pressable
-                                  onPress={() => handleOpenDownload(topResult)}
-                                  style={[styles.topResultActionButton, { borderColor: colors.cardBorder }]}
-                                >
-                                  <AppIcon ios="arrow.down.to.line" android="download-outline" size={20} color={colors.textSecondary} />
-                                </Pressable>
-                              </View>
                             )}
                           </View>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+                            {structuredData.artists.map((artist, idx) => (
+                              <ArtistCircleCard
+                                key={`artist-circle-${idx}-${artist.id}`}
+                                title={safeString(artist.title, 'Unknown Artist')}
+                                imageUri={safeString(artist.image)}
+                                onPress={() => router.push({ pathname: '/artist', params: { id: artist.id, name: artist.title, image: artist.image } })}
+                              />
+                            ))}
+                          </ScrollView>
                         </View>
-                      </Pressable>
-                    </View>
-                  )}
+                      )}
 
-                  {/* Results Section */}
-                  <View style={{ paddingHorizontal: 16, gap: 12 }}>
-                    <View style={styles.resultsSectionHeader}>
-                      <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>
-                        {activeChip === 'Local' ? 'Local Device Audio' : `${activeChip === 'All' ? 'Search Results' : activeChip}`}
-                      </RNText>
-                      <View style={styles.pulseDotWrapper}>
-                        <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
-                      </View>
-                      <View style={{ flex: 1 }} />
-                    </View>
-
-                    <View style={{ gap: 8 }}>
-                      {apiResults.length > 0 ? (
-                        apiResults.slice(topResult ? 1 : 0).map((item, index) => {
-                          if (!item) return null;
-                          try {
-                            if (item.sourceType === 'local') {
-                              return (
-                                <LocalAudioItem
-                                  key={`local-${index}-${item.id}`}
-                                  title={item.title}
-                                  subtitle={item.artist}
-                                  onPress={() => handlePlayYouTubeTrack(item)}
-                                  onOptionsPress={() => {
-                                    setSelectedTrack(item);
-                                    setIsTrackOptionsVisible(true);
-                                  }}
-                                />
-                              );
-                            }
-                            if (item.itemType === 'artist') {
-                              return (
-                                <ArtistItem
-                                  key={`artist-${index}-${safeString(item.id)}`}
-                                  title={safeString(item.title, 'Unknown Artist')}
-                                  subtitle={safeString(item.artist, 'Artist')}
-                                  imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
-                                  onPress={() => router.push({ pathname: '/artist', params: { id: item.id, name: item.title, image: item.image } })}
-                                />
-                              );
-                            }
-                            if (item.itemType === 'album' || item.itemType === 'playlist') {
-                              return (
-                                <AlbumPlaylistItem
-                                  key={`collection-${index}-${safeString(item.id)}`}
-                                  title={safeString(item.title, 'Collection')}
-                                  subtitle={safeString(item.artist, 'YouTube Music')}
-                                  imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
-                                  itemType={item.itemType}
-                                  onPress={() => router.push({ pathname: '/playlist', params: { id: item.id, type: 'online' } })}
-                                />
-                              );
-                            }
-                            return (
+                      {/* Top Songs Section */}
+                      {structuredData.songs.length > 0 && (
+                        <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                          <View style={styles.sectionHeaderRow}>
+                            <RNText style={[styles.resultsSectionTitle, { color: colors.text }]}>Songs</RNText>
+                            {structuredData.songs.length > 7 && (
+                              <Pressable onPress={() => setActiveChip('Songs')} style={{ padding: 4 }}>
+                                <RNText style={[styles.seeAllText, { color: colors.accent }]}>See all</RNText>
+                              </Pressable>
+                            )}
+                          </View>
+                          <View style={{ gap: 8 }}>
+                            {structuredData.songs.slice(0, 7).map((item, index) => (
                               <YouTubeItem
-                                key={`yt-${index}-${safeString(item.id)}`}
+                                key={`yt-all-song-${index}-${safeString(item.id)}`}
                                 title={safeString(item.title, 'Unknown Song')}
                                 subtitle={`${safeString(item.artist, 'Unknown Artist')}${item.duration ? ` • ${formatDuration(item.duration)}` : ''}`}
                                 imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
@@ -867,17 +869,223 @@ export default function SearchScreen() {
                                 })}
                                 onDownload={() => handleOpenDownload(item)}
                               />
-                            );
-                          } catch (err) {
-                            console.error("CRITICAL ERROR IN MAP EVALUATION:", err, "ITEM:", item);
-                            return null;
-                          }
-                        })
-                      ) : (
-                        <RNText style={{ color: colors.textSecondary }}>No results found for this query.</RNText>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Albums Horizontal Section */}
+                      {structuredData.albums.length > 0 && (
+                        <View style={{ gap: 12 }}>
+                          <View style={styles.sectionHeaderRow}>
+                            <RNText style={[styles.resultsSectionTitle, { color: colors.text }]}>Albums</RNText>
+                            {structuredData.albums.length > 2 && (
+                              <Pressable onPress={() => setActiveChip('Albums')} style={{ padding: 4 }}>
+                                <RNText style={[styles.seeAllText, { color: colors.accent }]}>See all</RNText>
+                              </Pressable>
+                            )}
+                          </View>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+                            {structuredData.albums.map((album, idx) => (
+                              <AlbumCardHorizontal
+                                key={`album-all-${idx}-${album.id}`}
+                                title={safeString(album.title, 'Album')}
+                                subtitle={safeString(album.artist, 'Album')}
+                                imageUri={safeString(album.image)}
+                                badgeText="ALBUM"
+                                onPress={() => router.push({ pathname: '/playlist', params: { id: album.id, type: 'online' } })}
+                              />
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+
+                      {/* Playlists Horizontal Section */}
+                      {structuredData.playlists.length > 0 && (
+                        <View style={{ gap: 12 }}>
+                          <View style={styles.sectionHeaderRow}>
+                            <RNText style={[styles.resultsSectionTitle, { color: colors.text }]}>Playlists</RNText>
+                            {structuredData.playlists.length > 2 && (
+                              <Pressable onPress={() => setActiveChip('Playlists')} style={{ padding: 4 }}>
+                                <RNText style={[styles.seeAllText, { color: colors.accent }]}>See all</RNText>
+                              </Pressable>
+                            )}
+                          </View>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+                            {structuredData.playlists.map((playlist, idx) => (
+                              <AlbumCardHorizontal
+                                key={`playlist-all-${idx}-${playlist.id}`}
+                                title={safeString(playlist.title, 'Playlist')}
+                                subtitle={safeString(playlist.artist, 'YouTube Music')}
+                                imageUri={safeString(playlist.image)}
+                                badgeText="PLAYLIST"
+                                onPress={() => router.push({ pathname: '/playlist', params: { id: playlist.id, type: 'online' } })}
+                              />
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+
+                      {/* Empty state for 'All' */}
+                      {!topResult && structuredData.songs.length === 0 && structuredData.artists.length === 0 && structuredData.albums.length === 0 && structuredData.playlists.length === 0 && (
+                        <View style={{ padding: 32, alignItems: 'center' }}>
+                          <RNText style={{ color: colors.textSecondary }}>No results found for this query.</RNText>
+                        </View>
                       )}
                     </View>
-                  </View>
+                  )}
+
+                  {/* ==================== TAB 2: SONGS ==================== */}
+                  {activeChip === 'Songs' && (
+                    <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                      <View style={styles.resultsSectionHeader}>
+                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>Songs</RNText>
+                        <View style={styles.pulseDotWrapper}>
+                          <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
+                        </View>
+                      </View>
+                      <View style={{ gap: 8 }}>
+                        {apiResults.length > 0 ? (
+                          apiResults.map((item, index) => (
+                            <YouTubeItem
+                              key={`yt-songs-tab-${index}-${safeString(item.id)}`}
+                              title={safeString(item.title, 'Unknown Song')}
+                              subtitle={`${safeString(item.artist, 'Unknown Artist')}${item.duration ? ` • ${formatDuration(item.duration)}` : ''}`}
+                              imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
+                              onPress={() => handlePlayYouTubeTrack(item)}
+                              isLoading={loadingTrackId === item.id}
+                              isPlayingNow={currentTrack?.id === item.id}
+                              isLiked={favoriteTracks.includes(item.id)}
+                              onLike={() => toggleFavorite({
+                                id: item.id,
+                                title: safeString(item.title),
+                                artist: safeString(item.artist),
+                                image: safeString(item.image),
+                                duration: item.duration || 0,
+                                sourceType: 'youtube'
+                              })}
+                              onDownload={() => handleOpenDownload(item)}
+                            />
+                          ))
+                        ) : (
+                          <RNText style={{ color: colors.textSecondary }}>No songs found.</RNText>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ==================== TAB 3: ARTISTS ==================== */}
+                  {activeChip === 'Artists' && (
+                    <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                      <View style={styles.resultsSectionHeader}>
+                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>Artists</RNText>
+                        <View style={styles.pulseDotWrapper}>
+                          <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
+                        </View>
+                      </View>
+                      <View style={{ gap: 8 }}>
+                        {apiResults.length > 0 ? (
+                          apiResults.map((item, index) => (
+                            <ArtistItem
+                              key={`artist-tab-${index}-${safeString(item.id)}`}
+                              title={safeString(item.title, 'Unknown Artist')}
+                              subtitle={safeString(item.artist, 'Artist')}
+                              imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
+                              onPress={() => router.push({ pathname: '/artist', params: { id: item.id, name: item.title, image: item.image } })}
+                            />
+                          ))
+                        ) : (
+                          <RNText style={{ color: colors.textSecondary }}>No artists found.</RNText>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ==================== TAB 4: ALBUMS ==================== */}
+                  {activeChip === 'Albums' && (
+                    <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                      <View style={styles.resultsSectionHeader}>
+                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>Albums</RNText>
+                        <View style={styles.pulseDotWrapper}>
+                          <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
+                        </View>
+                      </View>
+                      <View style={{ gap: 8 }}>
+                        {apiResults.length > 0 ? (
+                          apiResults.map((item, index) => (
+                            <AlbumPlaylistItem
+                              key={`album-tab-${index}-${safeString(item.id)}`}
+                              title={safeString(item.title, 'Album')}
+                              subtitle={safeString(item.artist, 'Album')}
+                              imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
+                              itemType="album"
+                              onPress={() => router.push({ pathname: '/playlist', params: { id: item.id, type: 'online' } })}
+                            />
+                          ))
+                        ) : (
+                          <RNText style={{ color: colors.textSecondary }}>No albums found.</RNText>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ==================== TAB 5: PLAYLISTS ==================== */}
+                  {activeChip === 'Playlists' && (
+                    <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                      <View style={styles.resultsSectionHeader}>
+                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>Playlists</RNText>
+                        <View style={styles.pulseDotWrapper}>
+                          <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
+                        </View>
+                      </View>
+                      <View style={{ gap: 8 }}>
+                        {apiResults.length > 0 ? (
+                          apiResults.map((item, index) => (
+                            <AlbumPlaylistItem
+                              key={`playlist-tab-${index}-${safeString(item.id)}`}
+                              title={safeString(item.title, 'Playlist')}
+                              subtitle={safeString(item.artist, 'YouTube Music')}
+                              imageUri={safeString(item.image) || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png'}
+                              itemType="playlist"
+                              onPress={() => router.push({ pathname: '/playlist', params: { id: item.id, type: 'online' } })}
+                            />
+                          ))
+                        ) : (
+                          <RNText style={{ color: colors.textSecondary }}>No playlists found.</RNText>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ==================== TAB 6: LOCAL ==================== */}
+                  {activeChip === 'Local' && (
+                    <View style={{ paddingHorizontal: 16, gap: 12 }}>
+                      <View style={styles.resultsSectionHeader}>
+                        <RNText style={[styles.resultsSectionTitleText, { color: colors.text }]}>Local Device Audio</RNText>
+                        <View style={styles.pulseDotWrapper}>
+                          <View style={[styles.pulseDot, { backgroundColor: colors.pulseDot }]} />
+                        </View>
+                      </View>
+                      <View style={{ gap: 8 }}>
+                        {apiResults.length > 0 ? (
+                          apiResults.map((item, index) => (
+                            <LocalAudioItem
+                              key={`local-${index}-${item.id}`}
+                              title={item.title}
+                              subtitle={item.artist}
+                              onPress={() => handlePlayYouTubeTrack(item)}
+                              onOptionsPress={() => {
+                                setSelectedTrack(item);
+                                setIsTrackOptionsVisible(true);
+                              }}
+                            />
+                          ))
+                        ) : (
+                          <RNText style={{ color: colors.textSecondary }}>No local audio files found for this query.</RNText>
+                        )}
+                      </View>
+                    </View>
+                  )}
                 </>
               )}
             </>
