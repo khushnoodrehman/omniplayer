@@ -39,12 +39,15 @@ export default function PlaylistScreen() {
     const [playlist, setPlaylist] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaved, setIsSaved] = useState(false);
-    const [reloadTrigger, setReloadTrigger] = useState(0);
-
-    const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
     const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+    const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
     const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
     const [renamePlaylistName, setRenamePlaylistName] = useState('');
+    const [reloadTrigger, setReloadTrigger] = useState(0);
+
+    // Infinite scroll & continuation state
+    const [continuationToken, setContinuationToken] = useState<string | null>(null);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -86,6 +89,7 @@ export default function PlaylistScreen() {
                         trackCount: songs.length,
                         duration: ""
                     });
+                    setContinuationToken(null);
                     setIsLoading(false);
                     return;
                 }
@@ -104,12 +108,14 @@ export default function PlaylistScreen() {
                             trackCount: localTracks?.length || 0,
                             duration: ""
                         });
+                        setContinuationToken(null);
                     } else {
                         throw new Error("Custom playlist not found in database.");
                     }
                 } else {
                     const data = await InnerTubeClient.getPlaylistDetails(id);
                     setPlaylist(data);
+                    setContinuationToken(data.continuationToken || null);
                 }
             } catch (error) {
                 console.log("[PlaylistScreen] Network error, attempting offline DB fallback for playlist ID:", id);
@@ -127,6 +133,7 @@ export default function PlaylistScreen() {
                             trackCount: localTracks.length,
                             duration: ""
                         });
+                        setContinuationToken(null);
                     } else {
                         throw new Error("No offline copy found in local DB.");
                     }
@@ -140,6 +147,34 @@ export default function PlaylistScreen() {
         };
         fetchPlaylistDetails();
     }, [id, reloadTrigger]);
+
+    const handleLoadMore = async () => {
+        if (isLoadingMore || !continuationToken || !playlist) return;
+        setIsLoadingMore(true);
+        try {
+            const result = await InnerTubeClient.getPlaylistContinuation(
+                continuationToken,
+                playlist.image,
+                playlist.title
+            );
+            if (result.songs && result.songs.length > 0) {
+                setPlaylist((prev: any) => {
+                    if (!prev) return prev;
+                    const updatedSongs = [...prev.songs, ...result.songs];
+                    return {
+                        ...prev,
+                        songs: updatedSongs,
+                        trackCount: updatedSongs.length
+                    };
+                });
+            }
+            setContinuationToken(result.continuationToken || null);
+        } catch (err) {
+            console.error("[PlaylistScreen] Error loading more tracks:", err);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    };
 
     const handleDownloadPlaylist = () => {
         if (playlist && playlist.songs && playlist.songs.length > 0) {
@@ -271,7 +306,18 @@ export default function PlaylistScreen() {
                 )}
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+                contentContainerStyle={styles.scrollContent} 
+                showsVerticalScrollIndicator={false}
+                onScroll={({ nativeEvent }) => {
+                    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                    const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 350;
+                    if (isCloseToBottom && continuationToken && !isLoadingMore) {
+                        handleLoadMore();
+                    }
+                }}
+                scrollEventThrottle={100}
+            >
                 {/* Large Cover Art */}
                 <View style={styles.coverArtContainer}>
                     <Image source={{ uri: playlist.image }} style={styles.coverArt} contentFit="cover" />
@@ -429,6 +475,13 @@ export default function PlaylistScreen() {
                             </Pressable>
                         );
                     })}
+
+                    {isLoadingMore && (
+                        <View style={{ paddingVertical: 20, alignItems: 'center', justifyContent: 'center' }}>
+                            <ActivityIndicator size="small" color={colors.accent} />
+                            <RNText style={{ color: colors.textSecondary, fontSize: 12, marginTop: 8 }}>Loading more tracks...</RNText>
+                        </View>
+                    )}
                 </View>
             </ScrollView>
 

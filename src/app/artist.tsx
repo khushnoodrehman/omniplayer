@@ -9,6 +9,7 @@ import { AppIcon } from '@/components/ui/app-icon';
 import { usePlaybackStore, Track } from '@/store/usePlaybackStore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
+import TrackOptionsSheet from '@/components/track-options-sheet';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -29,6 +30,8 @@ export default function ArtistScreen() {
     const [artist, setArtist] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSubscribed, setIsSubscribed] = useState(false);
+    const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+    const [isTrackOptionsVisible, setIsTrackOptionsVisible] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -58,8 +61,16 @@ export default function ArtistScreen() {
         }
     };
 
-    const handleTrackOptions = (track: Track) => {
-        Alert.alert("Track Options", `Options for "${track.title}"`);
+    const handleTrackOptions = (track: any) => {
+        setSelectedTrack({
+            id: track.id,
+            title: track.title,
+            artist: track.artist,
+            image: track.image,
+            duration: track.duration,
+            sourceType: 'youtube'
+        });
+        setIsTrackOptionsVisible(true);
     };
 
     if (isLoading) {
@@ -305,6 +316,12 @@ export default function ArtistScreen() {
                     </View>
                 )}
             </ScrollView>
+
+            <TrackOptionsSheet
+                isVisible={isTrackOptionsVisible}
+                onClose={() => setIsTrackOptionsVisible(false)}
+                track={selectedTrack}
+            />
         </View>
     );
 }

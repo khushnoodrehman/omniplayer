@@ -335,7 +335,8 @@ export class InnerTubeClient {
         endpoint: string,
         body: any,
         clientKey: 'ANDROID_MUSIC' | 'WEB_REMIX' | 'ANDROID_VR' = 'WEB_REMIX',
-        excludeAuth = false
+        excludeAuth = false,
+        continuationToken?: string
     ): Promise<any> {
         const { headers, context } = await this.getRequestDetails(clientKey, excludeAuth);
 
@@ -348,7 +349,11 @@ export class InnerTubeClient {
         console.log(`[InnerTubeClient] Sending POST to '${endpoint}' with body:`, JSON.stringify(fullBody, null, 2));
 
         const startTime = Date.now();
-        const response = await fetch(`${BASE_URL}/${endpoint}?key=${API_KEY}`, {
+        const url = continuationToken
+            ? `${BASE_URL}/${endpoint}?key=${API_KEY}&continuation=${encodeURIComponent(continuationToken)}`
+            : `${BASE_URL}/${endpoint}?key=${API_KEY}`;
+
+        const response = await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify(fullBody)
@@ -1230,6 +1235,7 @@ export class InnerTubeClient {
 
             // Extract songs from all shelves in sectionList
             const songs: any[] = [];
+            let continuationToken: string | null = null;
 
             // Find section list in any potential layout location
             const sectionList = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer ||
@@ -1240,19 +1246,31 @@ export class InnerTubeClient {
             if (sectionList && sectionList.contents) {
                 for (const section of sectionList.contents) {
                     const shelf = section.musicPlaylistShelfRenderer || section.musicShelfRenderer || section.itemSectionRenderer;
-                    if (shelf && shelf.contents) {
-                        for (const item of shelf.contents) {
-                            const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer || item.musicMultiRowListItemRenderer);
-                            if (parsed) {
-                                // Inherit album cover art if song doesn't have its own
-                                if (!parsed.image || parsed.image === 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png') {
-                                    parsed.image = image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+                    if (shelf) {
+                        if (shelf.continuations?.[0]?.nextContinuationData?.continuation) {
+                            continuationToken = shelf.continuations[0].nextContinuationData.continuation;
+                        } else if (shelf.continuations?.[0]?.reloadContinuationData?.continuation) {
+                            continuationToken = shelf.continuations[0].reloadContinuationData.continuation;
+                        }
+
+                        if (shelf.contents) {
+                            for (const item of shelf.contents) {
+                                if (item.continuationItemRenderer) {
+                                    continuationToken = item.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token || continuationToken;
+                                    continue;
                                 }
-                                // Inherit artist name if song artist is generic or empty
-                                if (!parsed.artist || parsed.artist === 'YouTube Music' || parsed.artist === 'Artist' || parsed.artist === 'Album') {
-                                    parsed.artist = albumArtist || title || 'YouTube Music';
+                                const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer || item.musicMultiRowListItemRenderer);
+                                if (parsed) {
+                                    // Inherit album cover art if song doesn't have its own
+                                    if (!parsed.image || parsed.image === 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png') {
+                                        parsed.image = image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+                                    }
+                                    // Inherit artist name if song artist is generic or empty
+                                    if (!parsed.artist || parsed.artist === 'YouTube Music' || parsed.artist === 'Artist' || parsed.artist === 'Album') {
+                                        parsed.artist = albumArtist || title || 'YouTube Music';
+                                    }
+                                    songs.push(parsed);
                                 }
-                                songs.push(parsed);
                             }
                         }
                     }
@@ -1265,11 +1283,81 @@ export class InnerTubeClient {
                 description,
                 image,
                 trackCount: songs.length,
-                songs
+                songs,
+                continuationToken
             };
         } catch (err) {
             console.error('[InnerTubeClient] GetPlaylistDetails error:', err);
             throw err;
+        }
+    }
+
+    /**
+     * Fetch Next Batch of Songs in a Playlist via Continuation Token
+     */
+    public static async getPlaylistContinuation(
+        continuationToken: string,
+        parentImage?: string,
+        parentArtist?: string
+    ): Promise<{ songs: any[]; continuationToken: string | null }> {
+        const songs: any[] = [];
+        let nextContinuationToken: string | null = null;
+
+        try {
+            const response = await this.postRequest('browse', {}, 'WEB_REMIX', false, continuationToken);
+
+            if (response.continuationContents) {
+                const contShelf = response.continuationContents.musicPlaylistShelfContinuation || response.continuationContents.musicShelfContinuation;
+                if (contShelf) {
+                    if (contShelf.continuations?.[0]?.nextContinuationData?.continuation) {
+                        nextContinuationToken = contShelf.continuations[0].nextContinuationData.continuation;
+                    } else if (contShelf.continuations?.[0]?.reloadContinuationData?.continuation) {
+                        nextContinuationToken = contShelf.continuations[0].reloadContinuationData.continuation;
+                    }
+
+                    for (const item of contShelf.contents || []) {
+                        if (item.continuationItemRenderer) {
+                            nextContinuationToken = item.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token || nextContinuationToken;
+                            continue;
+                        }
+                        const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer || item.musicMultiRowListItemRenderer);
+                        if (parsed) {
+                            if (!parsed.image || parsed.image === 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png') {
+                                parsed.image = parentImage || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+                            }
+                            if (!parsed.artist || parsed.artist === 'YouTube Music' || parsed.artist === 'Artist' || parsed.artist === 'Album') {
+                                parsed.artist = parentArtist || 'YouTube Music';
+                            }
+                            songs.push(parsed);
+                        }
+                    }
+                }
+            } else if (response.onResponseReceivedActions) {
+                for (const action of response.onResponseReceivedActions) {
+                    const items = action.appendContinuationItemsAction?.continuationItems || [];
+                    for (const item of items) {
+                        if (item.continuationItemRenderer) {
+                            nextContinuationToken = item.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token || nextContinuationToken;
+                            continue;
+                        }
+                        const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer || item.musicMultiRowListItemRenderer);
+                        if (parsed) {
+                            if (!parsed.image || parsed.image === 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png') {
+                                parsed.image = parentImage || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+                            }
+                            if (!parsed.artist || parsed.artist === 'YouTube Music' || parsed.artist === 'Artist' || parsed.artist === 'Album') {
+                                parsed.artist = parentArtist || 'YouTube Music';
+                            }
+                            songs.push(parsed);
+                        }
+                    }
+                }
+            }
+
+            return { songs, continuationToken: nextContinuationToken };
+        } catch (err) {
+            console.error('[InnerTubeClient] GetPlaylistContinuation error:', err);
+            return { songs, continuationToken: null };
         }
     }
 
