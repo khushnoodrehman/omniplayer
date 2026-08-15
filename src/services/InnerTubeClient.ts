@@ -1184,7 +1184,7 @@ export class InnerTubeClient {
                 }
             }
 
-            // Parse metadata (Title, Description, Image)
+            // Parse metadata (Title, Description, Image, Artist)
             const header = response.header?.musicHeaderRenderer ||
                 response.header?.musicDetailHeaderRenderer ||
                 response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.musicResponsiveHeaderRenderer;
@@ -1197,6 +1197,22 @@ export class InnerTubeClient {
                 header?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
             if (thumbnails.length > 0) {
                 image = thumbnails[thumbnails.length - 1].url;
+            }
+
+            // Extract album artist name
+            let albumArtist = '';
+            if (header?.straplineTextOne?.runs) {
+                albumArtist = header.straplineTextOne.runs.map((r: any) => r.text).join('');
+            } else if (header?.subtitle?.runs) {
+                const artistRuns = header.subtitle.runs.filter((r: any) =>
+                    r.navigationEndpoint?.browseEndpoint?.browsePageType === 'MUSIC_PAGE_TYPE_ARTIST' ||
+                    r.navigationEndpoint?.browseEndpoint?.browseId?.startsWith('UC')
+                );
+                if (artistRuns.length > 0) {
+                    albumArtist = artistRuns.map((r: any) => r.text).join(', ');
+                }
+            } else if (header?.bylineText?.runs) {
+                albumArtist = header.bylineText.runs.map((r: any) => r.text).join('');
             }
 
             // Fallback to microformat for standard playlists/albums
@@ -1218,6 +1234,7 @@ export class InnerTubeClient {
             // Find section list in any potential layout location
             const sectionList = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer ||
                                 response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer ||
+                                response.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer ||
                                 response.contents?.sectionListRenderer;
 
             if (sectionList && sectionList.contents) {
@@ -1226,7 +1243,17 @@ export class InnerTubeClient {
                     if (shelf && shelf.contents) {
                         for (const item of shelf.contents) {
                             const parsed = this.parseMusicResponsiveListItem(item.musicResponsiveListItemRenderer || item.musicMultiRowListItemRenderer);
-                            if (parsed) songs.push(parsed);
+                            if (parsed) {
+                                // Inherit album cover art if song doesn't have its own
+                                if (!parsed.image || parsed.image === 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png') {
+                                    parsed.image = image || 'https://cdn-icons-png.flaticon.com/512/3844/3844724.png';
+                                }
+                                // Inherit artist name if song artist is generic or empty
+                                if (!parsed.artist || parsed.artist === 'YouTube Music' || parsed.artist === 'Artist' || parsed.artist === 'Album') {
+                                    parsed.artist = albumArtist || title || 'YouTube Music';
+                                }
+                                songs.push(parsed);
+                            }
                         }
                     }
                 }
