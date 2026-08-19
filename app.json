@@ -2,7 +2,7 @@
   "expo": {
     "name": "Omniplayer",
     "slug": "omniplayer",
-    "version": "1.0.2",
+    "version": "1.0.1",
     "newArchEnabled": false,
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

@@ -479,7 +479,7 @@ export default function SettingsScreen() {
                 iosIcon="info.circle"
                 androidIcon="information-circle-outline"
                 title="About OmniPlayer"
-                value="v1.0.2 RELEASE"
+                value="v1.0.1 RELEASE"
                 onPress={() => router.push('/about' as any)}
               />
             </View>

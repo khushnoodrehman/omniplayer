@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Pressable, Dimensions, TextInput, Text as RNText, ScrollView, ActivityIndicator, Platform, Image, Alert } from 'react-native';
+import { StyleSheet, View, Pressable, Dimensions, TextInput, Text as RNText, ScrollView, ActivityIndicator, Platform, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet, RNHostView } from '@expo/ui';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -543,11 +543,11 @@ export default function SearchScreen() {
 
         await playTrack(newTrack, queue.length > 0 ? queue : [newTrack]);
       } else {
-        Alert.alert("Stream Error", "Could not load stream link.");
+        alert("Could not load stream link.");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Stream fetch error:", error);
-      Alert.alert("Playback Error", "Could not load online audio stream. Please check your internet connection.");
+      alert("Could not load online audio stream. Please check your internet connection.");
     } finally {
       setLoadingTrackId(null);
     }
