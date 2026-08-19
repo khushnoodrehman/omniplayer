@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Pressable, Dimensions, TextInput, Text as RNText, ScrollView, ActivityIndicator, Platform, Image } from 'react-native';
+import { StyleSheet, View, Pressable, Dimensions, TextInput, Text as RNText, ScrollView, ActivityIndicator, Platform, Image, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet, RNHostView } from '@expo/ui';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -543,11 +543,22 @@ export default function SearchScreen() {
 
         await playTrack(newTrack, queue.length > 0 ? queue : [newTrack]);
       } else {
-        alert("Could not load stream link.");
+        Alert.alert("Stream Error", "Could not load stream link.");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Stream fetch error:", error);
-      alert("Could not load online audio stream. Please check your internet connection.");
+      if (error?.code === 'LOGIN_REQUIRED' || error?.message?.includes('verification')) {
+        Alert.alert(
+          "YouTube Verification Required",
+          "YouTube is requiring account verification to stream this track. Connect your YouTube account in Settings (free) for permanent, uninterrupted streaming.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Go to Settings", onPress: () => router.push('/(tabs)/settings') }
+          ]
+        );
+      } else {
+        Alert.alert("Playback Error", "Could not load online audio stream. Please check your internet connection or connect your YouTube account in Settings.");
+      }
     } finally {
       setLoadingTrackId(null);
     }

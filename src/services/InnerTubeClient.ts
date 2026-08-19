@@ -1462,7 +1462,7 @@ export class InnerTubeClient {
     }
 
     /**
-     * Resolve Direct Stream URL using ANDROID_MUSIC client spoofing
+     * Resolve Direct Stream URL using ANDROID_MUSIC / ANDROID_VR client spoofing
      */
     public static async getStreamUrl(videoId: string): Promise<any> {
         console.log('[InnerTubeClient] getStreamUrl called with videoId:', videoId);
@@ -1474,6 +1474,7 @@ export class InnerTubeClient {
         ];
 
         let lastError: any = null;
+        let requiresAuth = false;
 
         for (const clientKey of clientsToTry) {
             try {
@@ -1482,6 +1483,7 @@ export class InnerTubeClient {
                     this.visitorData = await AsyncStorage.getItem('yt_visitor_data');
                 }
 
+                // If user is logged in, pass auth cookies so YouTube bypasses bot checks!
                 const response = await this.postRequest('player', {
                     videoId,
                     playbackContext: {
@@ -1489,11 +1491,20 @@ export class InnerTubeClient {
                             signatureTimestamp: 19800
                         }
                     }
-                }, clientKey, true);
+                }, clientKey, false);
+
+                const status = response.playabilityStatus?.status;
+                const reason = response.playabilityStatus?.reason || '';
+
+                if (status === 'LOGIN_REQUIRED' || reason.toLowerCase().includes('bot') || reason.toLowerCase().includes('sign in')) {
+                    console.warn(`[InnerTubeClient] Client ${clientKey} encountered bot check / login required:`, reason);
+                    requiresAuth = true;
+                    continue;
+                }
 
                 const streamingData = response.streamingData;
                 if (!streamingData || (!streamingData.adaptiveFormats && !streamingData.formats)) {
-                    console.warn(`[InnerTubeClient] No formats with client ${clientKey}. Status:`, response.playabilityStatus?.status);
+                    console.warn(`[InnerTubeClient] No formats with client ${clientKey}. Status:`, status, reason);
                     continue;
                 }
 
@@ -1540,7 +1551,7 @@ export class InnerTubeClient {
                             signatureTimestamp: 19800
                         }
                     }
-                }, 'ANDROID_VR', true);
+                }, 'ANDROID_VR', false);
 
                 const streamingData = response.streamingData;
                 const formatsList = [
@@ -1562,6 +1573,12 @@ export class InnerTubeClient {
             } catch (freshErr) {
                 console.error('[InnerTubeClient] Fresh stream fetch failed:', freshErr);
             }
+        }
+
+        if (requiresAuth) {
+            const authErr: any = new Error('YouTube account verification required by Google.');
+            authErr.code = 'LOGIN_REQUIRED';
+            throw authErr;
         }
 
         throw lastError || new Error('Unable to extract playable stream URL');
