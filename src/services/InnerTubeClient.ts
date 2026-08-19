@@ -105,6 +105,11 @@ const CLIENTS: Record<string, ClientConfig> = {
         clientName: 'ANDROID_VR',
         clientVersion: '1.57.19',
         userAgent: 'com.google.android.apps.youtube.vr/1.57.19 (Linux; U; Android 10; en_US; Quest 2; Build/QP1A.190711.020)'
+    },
+    IOS: {
+        clientName: 'IOS',
+        clientVersion: '19.28.1',
+        userAgent: 'com.google.ios.youtube/19.28.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)'
     }
 };
 
@@ -248,7 +253,7 @@ export class InnerTubeClient {
      * Construct request headers and context payload
      */
     private static async getRequestDetails(
-        clientKey: 'ANDROID_MUSIC' | 'WEB_REMIX' | 'ANDROID_VR' = 'WEB_REMIX',
+        clientKey: 'ANDROID_MUSIC' | 'WEB_REMIX' | 'ANDROID_VR' | 'IOS' = 'WEB_REMIX',
         excludeAuth = false
     ) {
         const client = CLIENTS[clientKey];
@@ -269,7 +274,7 @@ export class InnerTubeClient {
             'Content-Type': 'application/json',
         };
 
-        // Web-specific headers only when NOT excluding auth
+        // Web/Client-specific headers
         if (!excludeAuth) {
             if (clientKey === 'WEB_REMIX') {
                 headers['X-Goog-Api-Format-Version'] = '2';
@@ -284,6 +289,13 @@ export class InnerTubeClient {
                 headers['X-Youtube-Client-Name'] = '67';
                 headers['X-Youtube-Client-Version'] = client.clientVersion;
             }
+        }
+
+        if (clientKey === 'IOS') {
+            headers['X-YouTube-Client-Name'] = '5';
+            headers['X-YouTube-Client-Version'] = client.clientVersion;
+            headers['Origin'] = 'https://www.youtube.com';
+            headers['Referer'] = 'https://www.youtube.com/';
         }
 
         if (cookies && !excludeAuth) {
@@ -320,6 +332,12 @@ export class InnerTubeClient {
             context.client.androidSdkVersion = client.androidSdkVersion;
         }
 
+        if (clientKey === 'IOS') {
+            context.client.deviceModel = 'iPhone16,2';
+            context.client.osName = 'iOS';
+            context.client.osVersion = '17.5.1.21F90';
+        }
+
         // Always pass visitorData if available
         if (this.visitorData) {
             context.client.visitorData = this.visitorData;
@@ -334,7 +352,7 @@ export class InnerTubeClient {
     private static async postRequest(
         endpoint: string,
         body: any,
-        clientKey: 'ANDROID_MUSIC' | 'WEB_REMIX' | 'ANDROID_VR' = 'WEB_REMIX',
+        clientKey: 'ANDROID_MUSIC' | 'WEB_REMIX' | 'ANDROID_VR' | 'IOS' = 'WEB_REMIX',
         excludeAuth = false,
         continuationToken?: string
     ): Promise<any> {
@@ -1462,19 +1480,21 @@ export class InnerTubeClient {
     }
 
     /**
-     * Resolve Direct Stream URL using ANDROID_MUSIC / ANDROID_VR client spoofing
+     * Resolve Direct Stream URL using IOS / ANDROID_VR / ANDROID_MUSIC client spoofing
      */
     public static async getStreamUrl(videoId: string): Promise<any> {
         console.log('[InnerTubeClient] getStreamUrl called with videoId:', videoId);
 
-        const clientsToTry: Array<'ANDROID_VR' | 'ANDROID_MUSIC' | 'WEB_REMIX'> = [
-            'ANDROID_VR',
-            'ANDROID_MUSIC',
-            'WEB_REMIX'
-        ];
+        const cookies = await AsyncStorage.getItem('yt_cookies');
+        const isLoggedIn = !!cookies;
+
+        // Guest users prioritize IOS -> ANDROID_VR -> ANDROID_MUSIC -> WEB_REMIX
+        // Logged-in users prioritize WEB_REMIX -> ANDROID_MUSIC -> IOS -> ANDROID_VR
+        const clientsToTry: Array<'IOS' | 'ANDROID_VR' | 'ANDROID_MUSIC' | 'WEB_REMIX'> = isLoggedIn
+            ? ['WEB_REMIX', 'ANDROID_MUSIC', 'IOS', 'ANDROID_VR']
+            : ['IOS', 'ANDROID_VR', 'ANDROID_MUSIC', 'WEB_REMIX'];
 
         let lastError: any = null;
-        let requiresAuth = false;
 
         for (const clientKey of clientsToTry) {
             try {
@@ -1483,7 +1503,7 @@ export class InnerTubeClient {
                     this.visitorData = await AsyncStorage.getItem('yt_visitor_data');
                 }
 
-                // If user is logged in, pass auth cookies so YouTube bypasses bot checks!
+                // If user is logged in, pass auth cookies; otherwise guest spoof
                 const response = await this.postRequest('player', {
                     videoId,
                     playbackContext: {
@@ -1491,14 +1511,13 @@ export class InnerTubeClient {
                             signatureTimestamp: 19800
                         }
                     }
-                }, clientKey, false);
+                }, clientKey, !isLoggedIn);
 
                 const status = response.playabilityStatus?.status;
                 const reason = response.playabilityStatus?.reason || '';
 
-                if (status === 'LOGIN_REQUIRED' || reason.toLowerCase().includes('bot') || reason.toLowerCase().includes('sign in')) {
+                if (status === 'LOGIN_REQUIRED' || reason.toLowerCase().includes('bot')) {
                     console.warn(`[InnerTubeClient] Client ${clientKey} encountered bot check / login required:`, reason);
-                    requiresAuth = true;
                     continue;
                 }
 
@@ -1537,9 +1556,9 @@ export class InnerTubeClient {
             }
         }
 
-        // If all clients failed with stale visitorData, clear visitorData and attempt one final fresh request
+        // If all clients failed with stale visitorData, clear visitorData and attempt one final fresh request with IOS
         if (this.visitorData) {
-            console.log('[InnerTubeClient] Clearing stale visitorData and retrying fresh stream fetch...');
+            console.log('[InnerTubeClient] Clearing stale visitorData and retrying fresh stream fetch with IOS...');
             this.visitorData = null;
             await AsyncStorage.removeItem('yt_visitor_data').catch(() => {});
 
@@ -1551,7 +1570,7 @@ export class InnerTubeClient {
                             signatureTimestamp: 19800
                         }
                     }
-                }, 'ANDROID_VR', false);
+                }, 'IOS', !isLoggedIn);
 
                 const streamingData = response.streamingData;
                 const formatsList = [
@@ -1573,12 +1592,6 @@ export class InnerTubeClient {
             } catch (freshErr) {
                 console.error('[InnerTubeClient] Fresh stream fetch failed:', freshErr);
             }
-        }
-
-        if (requiresAuth) {
-            const authErr: any = new Error('YouTube account verification required by Google.');
-            authErr.code = 'LOGIN_REQUIRED';
-            throw authErr;
         }
 
         throw lastError || new Error('Unable to extract playable stream URL');

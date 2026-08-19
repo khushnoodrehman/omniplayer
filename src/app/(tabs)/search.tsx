@@ -547,18 +547,7 @@ export default function SearchScreen() {
       }
     } catch (error: any) {
       console.error("Stream fetch error:", error);
-      if (error?.code === 'LOGIN_REQUIRED' || error?.message?.includes('verification')) {
-        Alert.alert(
-          "YouTube Verification Required",
-          "YouTube is requiring account verification to stream this track. Connect your YouTube account in Settings (free) for permanent, uninterrupted streaming.",
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "Go to Settings", onPress: () => router.push('/(tabs)/settings') }
-          ]
-        );
-      } else {
-        Alert.alert("Playback Error", "Could not load online audio stream. Please check your internet connection or connect your YouTube account in Settings.");
-      }
+      Alert.alert("Playback Error", "Could not load online audio stream. Please check your internet connection.");
     } finally {
       setLoadingTrackId(null);
     }

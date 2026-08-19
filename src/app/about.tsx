@@ -66,7 +66,7 @@ export default function AboutScreen() {
           <AppLogo size={72} />
           <RNText style={[styles.appName, { color: colors.text }]}>OmniPlayer</RNText>
           <View style={[styles.versionBadge, { backgroundColor: colors.backgroundSelected }]}>
-            <RNText style={[styles.versionText, { color: colors.textSecondary }]}>1.0.1  RELEASE</RNText>
+            <RNText style={[styles.versionText, { color: colors.textSecondary }]}>1.0.2  RELEASE</RNText>
           </View>
         </View>
 
