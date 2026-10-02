@@ -1,0 +1,89 @@
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactory.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactory.kt
+index 5548ab1..3675c4f 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactory.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactory.kt
+@@ -39,6 +39,7 @@ class HeaderInjectingDataSourceFactory(
+ 
+     override fun open(dataSpec: DataSpec): Long {
+       val perItemHeaders = MediaHeaders.get(dataSpec.uri.toString())
++      android.util.Log.d("RNTP-HEADERS", "GET key=${dataSpec.uri.toString().takeLast(80)} hit=${perItemHeaders != null}")
+       if (perItemHeaders != null) {
+         // Per-item headers take precedence so callers can override headers
+         // ExoPlayer injects itself (notably `Icy-MetaData: 1`).
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaHeaders.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaHeaders.kt
+index 0cb0889..a9d0139 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaHeaders.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaHeaders.kt
+@@ -5,6 +5,7 @@
+ 
+ package com.doublesymmetry.trackplayer.models
+ 
++import android.net.Uri
+ import java.util.concurrent.ConcurrentHashMap
+ 
+ /**
+@@ -17,9 +18,52 @@ object MediaHeaders {
+ 
+   fun set(uri: String, headers: Map<String, String>) {
+     this.headers[uri] = headers
++    try {
++      val parsed = Uri.parse(uri).toString()
++      this.headers[parsed] = headers
++    } catch (_: Exception) {}
++    try {
++      val decoded = Uri.decode(uri)
++      this.headers[decoded] = headers
++    } catch (_: Exception) {}
+   }
+ 
+-  fun get(uri: String): Map<String, String>? = headers[uri]
++  fun get(uri: String): Map<String, String>? {
++    val exact = headers[uri]
++    if (exact != null) return exact
++
++    try {
++      val parsed = Uri.parse(uri).toString()
++      val hit = headers[parsed]
++      if (hit != null) return hit
++    } catch (_: Exception) {}
++
++    try {
++      val decoded = Uri.decode(uri)
++      val hit = headers[decoded]
++      if (hit != null) return hit
++    } catch (_: Exception) {}
++
++    // Fallback for YouTube videoplayback streams: match by stream video ID query param
++    if (uri.contains("videoplayback")) {
++      val idParam = extractQueryParam(uri, "id")
++      if (idParam != null) {
++        for ((key, value) in headers) {
++          if (key.contains("id=$idParam")) {
++            return value
++          }
++        }
++      }
++      return headers.values.lastOrNull()
++    }
++
++    return null
++  }
++
++  private fun extractQueryParam(url: String, param: String): String? {
++    val pattern = Regex("[?&]$param=([^&]+)")
++    return pattern.find(url)?.groupValues?.get(1)
++  }
+ 
+   fun clear() = headers.clear()
+ }
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt
+index 43b2934..3179337 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt
+@@ -88,6 +88,7 @@ data class TrackPlayerMediaItem(
+ 
+     val mediaItem = builder.build()
+     headers?.let { MediaHeaders.set(resolvedUrl, it) }
++    android.util.Log.d("RNTP-HEADERS", "SET key=${resolvedUrl.takeLast(80)} headers=${headers?.keys}")
+     return mediaItem
+   }

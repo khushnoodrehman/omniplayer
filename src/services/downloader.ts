@@ -212,41 +212,51 @@ export const downloadTrackFile = async (
         filesToDelete.push(rawAudioPath);
         console.log(`[Downloader] Downloading raw audio to cache: ${rawAudioPath}`);
 
-        const audioDownloadResumable = FileSystem.createDownloadResumable(
-            streamUrl,
-            rawAudioPath,
-            {},
-            (downloadProgress) => {
-                if (downloadProgress.totalBytesExpectedToWrite > 0) {
-                    const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-                    if (onProgress) {
-                        onProgress(progress);
-                    }
-                    if (Platform.OS === 'android') {
-                        const percent = Math.round(progress * 100);
-                        notifee.displayNotification({
-                            id: trackId,
-                            title: `Downloading: ${track.title}`,
-                            body: `Progress: ${percent}%`,
-                            android: {
-                                channelId,
-                                onlyAlertOnce: true,
-                                ongoing: false,
-                                progress: {
-                                    max: 100,
-                                    current: percent,
-                                },
-                            },
-                        }).catch(err => console.warn('[Downloader] Notifee progress update failed:', err));
-                    }
+        // 5. Download Raw Audio via React Native fetch pipeline (which preserves custom headers & cookies)
+        console.log(`[Downloader] Downloading raw audio to cache via fetch: ${rawAudioPath}`);
+        onProgress?.(0.1);
+        if (Platform.OS === 'android') {
+            notifee.displayNotification({
+                id: trackId,
+                title: `Downloading: ${track.title}`,
+                body: `Downloading audio...`,
+                android: {
+                    channelId,
+                    onlyAlertOnce: true,
+                    ongoing: false,
+                    progress: { max: 100, current: 10 }
                 }
-            }
-        );
-
-        const audioDownloadRes = await audioDownloadResumable.downloadAsync();
-        if (!audioDownloadRes || audioDownloadRes.status !== 200) {
-            throw new Error(`Failed to download raw audio stream. HTTP status: ${audioDownloadRes?.status}`);
+            }).catch(() => {});
         }
+
+        const audioFetchRes = await fetch(streamUrl, {
+            method: 'GET',
+            headers: streamData.headers || {}
+        });
+
+        if (!audioFetchRes.ok && audioFetchRes.status !== 206) {
+            console.error(`[Downloader] ❌ Raw audio download failed. HTTP Status: ${audioFetchRes.status}`);
+            throw new Error(`Failed to download raw audio stream. HTTP status: ${audioFetchRes.status}`);
+        }
+
+        onProgress?.(0.6);
+        const audioBlob = await audioFetchRes.blob();
+        const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const result = reader.result as string;
+                const base64 = result.includes(',') ? result.split(',')[1] : result;
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(audioBlob);
+        });
+
+        await FileSystem.writeAsStringAsync(rawAudioPath, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+        onProgress?.(0.9);
+        console.log(`[Downloader] ✅ Raw audio download succeeded. Local path: ${rawAudioPath}`);
 
         // 6. Download HD cover art to temporary cache path
         const coverArtPath = `${FileSystem.cacheDirectory}temp_cover_${trackId}.jpg`;

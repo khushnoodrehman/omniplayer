@@ -1,0 +1,158 @@
+/**
+ * Local Headless BotGuard Minter HTML Sandbox
+ * 
+ * Provides an isolated browser environment with full DOM and JavaScript runtime
+ * for executing YouTube's BotGuard bytecode VM and minting Proof-of-Origin (PO) tokens.
+ * All network calls (fetching challenge, GenerateIT) are handled natively in React Native.
+ */
+
+// Embed the pre-bundled bgutils-js runtime (IIFE)
+const BGUTILS_BUNDLE = `"use strict";(()=>{var O=Object.defineProperty;var F=o=>{throw TypeError(o)};var U=(o,t,e)=>t in o?O(o,t,{enumerable:!0,configurable:!0,writable:!0,value:e}):o[t]=e;var u=(o,t,e)=>U(o,typeof t!="symbol"?t+"":t,e),L=(o,t,e)=>t.has(o)||F("Cannot "+e);var l=(o,t,e)=>(L(o,t,"read from private field"),e?e.call(o):t.get(o)),k=(o,t,e)=>t.has(o)?F("Cannot add the same private member more than once"):t instanceof WeakSet?t.add(o):t.set(o,e);var B=/[-_.]/g,_={"-":"+",_:"/",".":"="},b=class{constructor(){u(this,"promise");u(this,"resolve");u(this,"reject");this.promise=new Promise((t,e)=>{this.resolve=t,this.reject=e})}},a=class extends TypeError{constructor(e,n){super(e);u(this,"info");this.name="BgError",n&&(this.info=n)}};function x(o){let t;return B.test(o)?t=o.replace(B,function(e){return _[e]}):t=o,t=atob(t),new Uint8Array([...t].map(e=>e.charCodeAt(0)))}function S(o,t=!1){let e=btoa(String.fromCharCode(...o));return t?e.replace(/\\+/g,"-").replace(/\\//g,"_"):e}var p,d,T=class{constructor(){k(this,p,new Map);k(this,d,new Map)}emit(t,...e){let n=l(this,p).get(t);if(!(!n||n.size===0))for(let r of[...n])r(...e)}on(t,e){let n=l(this,p).get(t);n||(n=new Set,l(this,p).set(t,n)),n.add(e)}once(t,e){let n=(...i)=>{this.off(t,e),e(...i)},r=l(this,d).get(e);r||(r=new Map,l(this,d).set(e,r)),r.set(t,n),this.on(t,n)}off(t,e){let n=l(this,p).get(t);if(!n)return;let r=e,i=l(this,d).get(e);if(i){let s=i.get(t);s&&(r=s,i.delete(t),i.size===0&&l(this,d).delete(e))}n.delete(r),n.size===0&&l(this,p).delete(t)}removeAllListeners(t){if(!t){l(this,p).clear(),l(this,d).clear();return}l(this,p).delete(t);for(let[e,n]of l(this,d).entries())n.delete(t),n.size===0&&l(this,d).delete(e)}};p=new WeakMap,d=new WeakMap;var v=class o extends T{constructor(e){super();u(this,"vm");u(this,"program");u(this,"userInteractionElement");u(this,"syncSnapshotFunction");u(this,"deferredVmFunctions",new b);u(this,"defaultTimeout",3e3);if(!e.globalObject||!e.globalName||!e.program)throw new a("Invalid options",{options:e});this.userInteractionElement=e.userInteractionElement,this.vm=e.globalObject[e.globalName],this.program=e.program}on(e,n){super.on(e,n)}off(e,n){super.off(e,n)}static async create(e){return await new o(e).load()}async load(){if(!this.vm)throw new a("EGOU: BotGuard unavailable");if(!this.vm.a)throw new a("ELIU: BotGuard initialization function unavailable");let e=(c,m,g,y)=>{this.deferredVmFunctions.resolve({asyncSnapshotFunction:c,shutdownFunction:m,passEventFunction:g,checkCameraFunction:y})},n=(c,m)=>{this.emit("record-bg-event",{event:c,elapsedTime:m})},r=c=>{this.emit("increment-client-error-count",{errorCode:c})},i=c=>{this.emit("record-payload-size",{payloadSize:c})},s=(c,m)=>{this.emit("record-latency",{latency:c,et:m})},h=c=>{this.emit("increment-bg-event-count",{event:c})},w=[n,r,i,s,h],f=(c,m,g)=>{let y="k";m?y="h":g&&(y="u"),h(y),n(y,c)};try{this.syncSnapshotFunction=await this.vm.a(this.program,e,!0,this.userInteractionElement,f,[[],[]],void 0,!1,w)?.[0]}catch(c){throw new a("Could not load program",{error:c})}return this}async execute(e,n,...r){return await Promise.race([(async()=>{let s=(await this.deferredVmFunctions.promise)[e];if(!s)throw new a(\`\${e} function not found\`);return s(...r)})(),new Promise((i,s)=>setTimeout(()=>s(new a("VM operation timed out")),n))])}async snapshot(e,n=this.defaultTimeout){return await new Promise(async(r,i)=>{await this.execute("asyncSnapshotFunction",n,s=>r(s),[e.contentBinding,e.signedTimestamp,e.webPoSignalOutput,e.skipPrivacyBuffer]).catch(i)})}async passEvent(e,n=this.defaultTimeout){return this.execute("passEventFunction",n,e)}async checkCamera(e,n=this.defaultTimeout){return this.execute("checkCameraFunction",n,e)}async shutdown(e=this.defaultTimeout){return this.execute("shutdownFunction",e)}async snapshotSynchronous(e){if(!this.syncSnapshotFunction)throw new a("Synchronous snapshot function not found");return this.syncSnapshotFunction([e.contentBinding,e.signedTimestamp,e.webPoSignalOutput,e.skipPrivacyBuffer])}};var E=class o{constructor(t){u(this,"mintCallback");this.mintCallback=t}static async create(t,e){let n=e[0];if(!n)throw new a("PMD:Undefined");if(!t.integrityToken)throw new a("No integrity token provided",{integrityTokenResponse:t});let r=await n(x(t.integrityToken));if(!(r instanceof Function))throw new a("APF:Failed");return new o(r)}async mintAsWebsafeString(t){return S(await this.mint(t),!0)}async mint(t){let e=await this.mintCallback(new TextEncoder().encode(t));if(!e)throw new a("YNJ:Undefined");if(!(e instanceof Uint8Array))throw new a("ODM:Invalid");return e}};function C(o,t){let e=new TextEncoder().encode(o),n=Math.floor(Date.now()/1e3),r=[Math.floor(Math.random()*256),Math.floor(Math.random()*256)],i=r.concat([0,t??1],[n>>24&255,n>>16&255,n>>8&255,n&255]),s=new Uint8Array(2+i.length+e.length);s[0]=34,s[1]=i.length+e.length,s.set(i,2),s.set(e,2+i.length);let h=s.subarray(2),w=r.length;for(let f=w;f<h.length;f++)h[f]^=h[f%w];return S(s,!0)}function A(o){let t=x(o),n=2+t[1];if(t.length!==n)throw new a("Invalid packet length.",{packetLength:t.length,expectedLength:n});let r=t.subarray(2),i=2;for(let g=i;g<r.length;++g)r[g]^=r[g%i];let s=[r[0],r[1]],h=r[2],w=r[3],f=r[4]<<24|r[5]<<16|r[6]<<8|r[7],c=new Date(f*1e3);return{contentBinding:new TextDecoder().decode(r.subarray(8)),timestamp:f,unknownVal:h,clientState:w,keys:s,date:c}}window.BgUtils={BotGuardClient:v,WebPoMinter:E,createColdStartToken:C,decodeColdStartToken:A,base64ToU8:x,u8ToBase64:S};})();`;
+
+export const MINTER_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniPlayer Integrity Runner</title>
+  <script>
+    ${BGUTILS_BUNDLE}
+  </script>
+</head>
+<body style="background:#000;color:#fff;">
+  <script>
+    (function() {
+      window.__bgClient = null;
+      window.__webPoSignalOutput = null;
+      window.__bgMinter = null;
+
+      function post(data) {
+        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(JSON.stringify(data));
+        }
+      }
+
+      function log(msg) {
+        post({ type: 'LOG', message: msg });
+      }
+
+      window.handleNativeAction = async function(action) {
+        if (!action || !action.type) return;
+
+        try {
+          switch (action.type) {
+            case 'INIT_VM_AND_SNAPSHOT': {
+              const { program, globalName, interpreterJavascript, requestKey, ytcfg } = action.payload;
+              log('[Minter] Received INIT_VM_AND_SNAPSHOT. Executing interpreter...');
+
+              // Inject page identity so the BotGuard snapshot sees EVENT_ID
+              if (ytcfg) {
+                window.yt = { config_: ytcfg };
+                window.ytcfg = { d: function() { return ytcfg; }, get: function(k) { return ytcfg[k]; } };
+              }
+
+              // 1. Evaluate BotGuard VM script in the global context
+              new Function(interpreterJavascript)();
+
+              if (!window[globalName]) {
+                throw new Error('BotGuard VM not found on global object: ' + globalName);
+              }
+
+              // 2. Initialize BotGuardClient with bytecode program
+              const client = await window.BgUtils.BotGuardClient.create({
+                globalObject: window,
+                globalName: globalName,
+                program: program
+              });
+
+              window.__bgClient = client;
+              const webPoSignalOutput = [];
+
+              // 3. Take snapshot to generate botguardResponse
+              const botguardResponse = await client.snapshot({ webPoSignalOutput });
+              window.__webPoSignalOutput = webPoSignalOutput;
+
+              log('[Minter] Snapshot successfully produced. SignalOutput length: ' + webPoSignalOutput.length);
+
+              post({
+                type: 'SNAPSHOT_SUCCESS',
+                requestKey: requestKey,
+                botguardResponse: botguardResponse
+              });
+              break;
+            }
+
+            case 'MINT_SESSION': {
+              const { integrityToken, visitorData, estimatedTtlSecs } = action.payload;
+              log('[Minter] Received MINT_SESSION. Instantiating WebPoMinter...');
+
+              if (!window.__webPoSignalOutput || window.__webPoSignalOutput.length === 0) {
+                throw new Error('webPoSignalOutput unavailable. Run INIT_VM_AND_SNAPSHOT first.');
+              }
+
+              const minter = await window.BgUtils.WebPoMinter.create(
+                { integrityToken },
+                window.__webPoSignalOutput
+              );
+              window.__bgMinter = minter;
+
+              // Mint session token bound to visitorData
+              const poToken = await minter.mintAsWebsafeString(visitorData);
+              log('[Minter] Session PO Token minted successfully. Length: ' + poToken.length);
+
+              post({
+                type: 'MINT_SESSION_SUCCESS',
+                poToken: poToken,
+                visitorData: visitorData,
+                estimatedTtlSecs: estimatedTtlSecs || 21600
+              });
+              break;
+            }
+
+            case 'MINT_CONTENT': {
+              const { videoId } = action.payload;
+              if (!window.__bgMinter) {
+                throw new Error('WebPoMinter not active. Run MINT_SESSION first.');
+              }
+
+              const poToken = await window.__bgMinter.mintAsWebsafeString(videoId);
+              post({
+                type: 'MINT_CONTENT_SUCCESS',
+                videoId: videoId,
+                poToken: poToken
+              });
+              break;
+            }
+
+            case 'PING': {
+              post({ type: 'PONG', timestamp: Date.now() });
+              break;
+            }
+
+            default:
+              log('[Minter] Unknown action: ' + action.type);
+          }
+        } catch (err) {
+          post({
+            type: 'ERROR',
+            action: action.type,
+            error: err.message || String(err)
+          });
+        }
+      };
+
+      // Handle postMessage events
+      window.addEventListener('message', function(event) {
+        try {
+          const action = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          window.handleNativeAction(action);
+        } catch (e) {}
+      });
+
+      // Signal ready to React Native
+      post({ type: 'MINTER_READY' });
+    })();
+  </script>
+</body>
+</html>
+`;

@@ -1,4 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePlaybackStore } from '../store/usePlaybackStore';
+import { Platform } from 'react-native';
+import CookieManager from '@preeternal/react-native-cookie-manager';
+import { UNIFIED_IDENTITY } from './PoTokenManager';
 
 // ============================================================================
 // 🌟 PURE JAVASCRIPT SHA-1 IMPLEMENTATION (For SAPISIDHASH without Native dependencies)
@@ -90,21 +94,22 @@ interface ClientConfig {
 }
 
 const CLIENTS: Record<string, ClientConfig> = {
+    ANDROID_VR: {
+        clientName: 'ANDROID_VR',
+        clientVersion: '1.65.10',
+        userAgent: 'com.google.android.apps.youtube.vr/1.65.10 (Linux; U; Android 12L; en_US; Quest 3; Build/SQ3A.220605.009.A1)',
+        androidSdkVersion: 32
+    },
     ANDROID_MUSIC: {
         clientName: 'ANDROID_MUSIC',
-        clientVersion: '6.45.52',
-        userAgent: 'com.google.android.apps.youtube.music/6.45.52 (Linux; U; Android 13; en_US; Pixel 7 Pro; Build/TD1A.220804.031)',
+        clientVersion: '7.21.50',
+        userAgent: 'com.google.android.apps.youtube.music/7.21.50 (Linux; U; Android 13; en_US; Pixel 7 Pro; Build/TD1A.220804.031)',
         androidSdkVersion: 33
     },
     WEB_REMIX: {
         clientName: 'WEB_REMIX',
         clientVersion: '1.20240618.01.00',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    },
-    ANDROID_VR: {
-        clientName: 'ANDROID_VR',
-        clientVersion: '1.57.19',
-        userAgent: 'com.google.android.apps.youtube.vr/1.57.19 (Linux; U; Android 10; en_US; Quest 2; Build/QP1A.190711.020)'
     }
 };
 
@@ -1169,7 +1174,7 @@ export class InnerTubeClient {
                 response = await this.postRequest('browse', {
                     browseId
                 });
-            } catch (err) {
+            } catch {
                 console.log(`[InnerTubeClient] Browse failed for ${browseId}, retrying fallbacks...`);
                 // Fallback 1: Try without VL prefix
                 if (browseId.startsWith('VL') && browseId !== 'VLLM') {
@@ -1177,7 +1182,7 @@ export class InnerTubeClient {
                     try {
                         console.log(`[InnerTubeClient] Retrying without VL prefix: ${fallbackId}`);
                         response = await this.postRequest('browse', { browseId: fallbackId });
-                    } catch (fallbackErr) {
+                    } catch {
                         // Fallback 2: Try without authentication headers (guest session)
                         console.log(`[InnerTubeClient] Non-prefixed browse failed, retrying guest browse for ${fallbackId}`);
                         response = await this.postRequest('browse', { browseId: fallbackId }, 'WEB_REMIX', true);
@@ -1461,110 +1466,272 @@ export class InnerTubeClient {
         }
     }
 
+    // ============================================================================
+    // 🌟 youtubei.js INSTANCE (Lazy Loaded for Stream Extraction)
+    // ============================================================================
+    private static ytInstance: any = null;
+    private static lastPoToken: string | null = null;
+
+    private static async getYT() {
+        const storeState = usePlaybackStore.getState();
+        const currentPoToken = storeState.poToken;
+        
+        if (this.ytInstance && this.lastPoToken === currentPoToken) {
+            return this.ytInstance;
+        }
+
+        // If the token changed (e.g. WebView just captured it), we recreate the instance
+        this.ytInstance = null;
+        this.lastPoToken = currentPoToken;
+
+        try {
+            const { Innertube, Platform } = require('youtubei.js');
+            const Jintr = require('jintr').default || require('jintr');
+
+            // Use native eval since YouTube updated base.js to use ES6 classes, 
+            // which Jintr currently does not support. 
+            // Note: In React Native, eval() works in Dev mode. For release, Hermes eval must be enabled.
+            Platform.shim.eval = (code: any, env: any) => {
+                let source = typeof code === 'string' ? code : code.output;
+                
+                let envSetup = '';
+                if (env && typeof env === 'object') {
+                    for (const k of Object.keys(env)) {
+                        envSetup += `var ${k} = env['${k}'];\n`;
+                    }
+                }
+                
+                source = `(function(env) { ${envSetup} ${source} })`;
+                
+                // eslint-disable-next-line no-eval
+                return eval(source)(env);
+            };
+
+            const visitorData = storeState.visitorData;
+
+            // Fetch WebView cookies to sync session
+            let cookieString = '';
+            try {
+                const cookies = await CookieManager.get('https://music.youtube.com');
+                if (cookies && Object.keys(cookies).length > 0) {
+                    cookieString = Object.values(cookies)
+                        .map((c: any) => `${c.name}=${c.value}`)
+                        .join('; ');
+                    console.log(`[InnerTubeClient] Synced WebView cookies. Length: ${cookieString.length}`);
+                }
+            } catch (err) {
+                console.warn('[InnerTubeClient] Error fetching cookies from CookieManager:', err);
+            }
+
+            this.ytInstance = await Innertube.create({ 
+                generate_session_locally: true,
+                client_type: UNIFIED_IDENTITY.clientName,
+                po_token: currentPoToken || undefined,
+                visitor_data: visitorData || undefined,
+                cookie: cookieString || undefined,
+                fetch: async (input: any, init: any) => {
+                    const headers = new Headers(init?.headers || {});
+                    headers.set('User-Agent', UNIFIED_IDENTITY.userAgent);
+                    if (cookieString) {
+                        headers.set('Cookie', cookieString);
+                    }
+                    return fetch(input, {
+                        ...init,
+                        headers
+                    });
+                }
+            });
+            console.log(`[InnerTubeClient] youtubei.js instance initialized. PoToken present: ${!!currentPoToken}`);
+            return this.ytInstance;
+        } catch (e) {
+            console.error('[InnerTubeClient] Failed to initialize youtubei.js:', e);
+            throw e;
+        }
+    }
+
+    private static androidVrInstance: any = null;
+    private static async getAndroidVrYT() {
+        if (this.androidVrInstance) return this.androidVrInstance;
+        try {
+            const { Innertube, Platform: YTPlatform } = require('youtubei.js');
+            YTPlatform.shim.eval = (code: any, env: any) => {
+                let source = typeof code === 'string' ? code : code.output;
+                let envSetup = '';
+                if (env && typeof env === 'object') {
+                    for (const k of Object.keys(env)) {
+                        envSetup += `var ${k} = env['${k}'];\n`;
+                    }
+                }
+                source = `(function(env) { ${envSetup} ${source} })`;
+                // eslint-disable-next-line no-eval
+                return eval(source)(env);
+            };
+
+            this.androidVrInstance = await Innertube.create({
+                generate_session_locally: true,
+                client_type: 'ANDROID_VR',
+                fetch: async (input: any, init: any) => {
+                    // Do NOT override User-Agent here: let youtubei.js send its native Quest VR UA
+                    return fetch(input, init);
+                }
+            });
+            console.log('[InnerTubeClient] ✅ ANDROID_VR fallback instance initialized.');
+            return this.androidVrInstance;
+        } catch (e) {
+            console.error('[InnerTubeClient] Failed to initialize ANDROID_VR client:', e);
+            throw e;
+        }
+    }
+
     /**
-     * Resolve Direct Stream URL using ANDROID_MUSIC client spoofing
+     * Resolve Direct Stream URL using Multi-Tier Strategy:
+     * Tier 1: WEB_REMIX with PO Token + &pot= parameter
+     * Tier 2: ANDROID_VR fallback (No PO token required, direct high-quality streams)
      */
     public static async getStreamUrl(videoId: string): Promise<any> {
-        console.log('[InnerTubeClient] getStreamUrl called with videoId:', videoId);
+        console.log(`[InnerTubeClient] 🎵 resolveStreamUrl requested for videoId: "${videoId}"`);
 
-        const clientsToTry: Array<'ANDROID_VR' | 'ANDROID_MUSIC' | 'WEB_REMIX'> = [
-            'ANDROID_VR',
-            'ANDROID_MUSIC',
-            'WEB_REMIX'
-        ];
-
-        let lastError: any = null;
-
-        for (const clientKey of clientsToTry) {
-            try {
-                // Load visitor data if not loaded
-                if (!this.visitorData) {
-                    this.visitorData = await AsyncStorage.getItem('yt_visitor_data');
-                }
-
-                const response = await this.postRequest('player', {
-                    videoId,
-                    playbackContext: {
-                        contentPlaybackContext: {
-                            signatureTimestamp: 19800
-                        }
-                    }
-                }, clientKey, true);
-
-                const streamingData = response.streamingData;
-                if (!streamingData || (!streamingData.adaptiveFormats && !streamingData.formats)) {
-                    console.warn(`[InnerTubeClient] No formats with client ${clientKey}. Status:`, response.playabilityStatus?.status);
-                    continue;
-                }
-
-                const formatsList = [
-                    ...(streamingData.adaptiveFormats || []),
-                    ...(streamingData.formats || [])
-                ];
-
-                const audioFormats = formatsList.filter((format: any) =>
-                    (format.mimeType?.startsWith('audio/') || !format.mimeType) && !!format.url
-                );
-
-                if (audioFormats.length === 0) {
-                    console.warn(`[InnerTubeClient] No direct playable audio streams found with client ${clientKey}`);
-                    continue;
-                }
-
-                audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-                const bestFormat = audioFormats[0];
-
-                console.log(`[InnerTubeClient] Successfully resolved stream URL with client ${clientKey}`);
-                return {
-                    id: videoId,
-                    stream_url: bestFormat.url,
-                    duration: Math.round(Number(response.videoDetails?.lengthSeconds || 0))
-                };
-            } catch (err: any) {
-                console.warn(`[InnerTubeClient] Stream extraction failed with client ${clientKey}:`, err.message);
-                lastError = err;
-            }
+        // Resolve PO Token (max 1.8s wait, falls back to null if pending)
+        let poToken: string | null = null;
+        try {
+            poToken = await usePlaybackStore.getState().waitForPoToken(videoId);
+        } catch (tokenErr) {
+            console.warn(`[InnerTubeClient] PO Token resolution failed for video ID: ${videoId}:`, tokenErr);
         }
 
-        // If all clients failed with stale visitorData, clear visitorData and attempt one final fresh request
-        if (this.visitorData) {
-            console.log('[InnerTubeClient] Clearing stale visitorData and retrying fresh stream fetch...');
-            this.visitorData = null;
-            await AsyncStorage.removeItem('yt_visitor_data').catch(() => {});
+        const storeState = usePlaybackStore.getState();
+        const currentPoToken = poToken || storeState.poToken;
 
+        // ========================================================================
+        // 🌟 TIER 1: WEB_REMIX with PO Token
+        // ========================================================================
+        if (currentPoToken) {
             try {
-                const response = await this.postRequest('player', {
-                    videoId,
-                    playbackContext: {
-                        contentPlaybackContext: {
-                            signatureTimestamp: 19800
-                        }
-                    }
-                }, 'ANDROID_VR', true);
-
-                const streamingData = response.streamingData;
-                const formatsList = [
-                    ...(streamingData?.adaptiveFormats || []),
-                    ...(streamingData?.formats || [])
+                console.log(`[InnerTubeClient] 🟢 Attempting Tier 1 (WEB_REMIX) with PO Token (len: ${currentPoToken.length})`);
+                const yt = await this.getYT();
+                const info = await yt.getBasicInfo(videoId);
+                const formats = [
+                    ...(info.streaming_data?.adaptive_formats || []),
+                    ...(info.streaming_data?.formats || [])
                 ];
-                const audioFormats = formatsList.filter((format: any) =>
-                    (format.mimeType?.startsWith('audio/') || !format.mimeType) && !!format.url
-                );
 
-                if (audioFormats.length > 0) {
-                    audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+                let format;
+                if (Platform.OS === 'ios') {
+                    format = formats.find((f: any) => f.itag === 140) || (formats.length > 0 ? info.chooseFormat({ type: 'audio', format: 'mp4' }) : null);
+                } else {
+                    format = formats.find((f: any) => f.itag === 140) || 
+                             formats.find((f: any) => f.itag === 251) || 
+                             (formats.length > 0 ? info.chooseFormat({ type: 'audio', quality: 'best' }) : null);
+                }
+                if (!format && formats.length > 0) format = info.chooseFormat({ type: 'audio' });
+
+                if (format) {
+                    console.log(`[InnerTubeClient] Tier 1 Selected format: itag ${format.itag} (${format.mime_type}), bitrate: ${format.bitrate}`);
+                    let decipheredUrl = await format.decipher(yt.session.player);
+
+                    // 🌟 CRITICAL: Append &pot= parameter to stream URL for Google Video Server (GVS)
+                    if (currentPoToken && !decipheredUrl.includes('&pot=')) {
+                        decipheredUrl += `${decipheredUrl.includes('?') ? '&' : '?'}pot=${encodeURIComponent(currentPoToken)}`;
+                    }
+
+                    let cookieString = '';
+                    try {
+                        const cookies = await CookieManager.get('https://music.youtube.com');
+                        if (cookies && Object.keys(cookies).length > 0) {
+                            cookieString = Object.values(cookies).map((c: any) => `${c.name}=${c.value}`).join('; ');
+                        }
+                    } catch {}
+
+                    const streamHeaders: Record<string, string> = {
+                        'User-Agent': UNIFIED_IDENTITY.userAgent,
+                        'Origin': UNIFIED_IDENTITY.origin,
+                        'Referer': UNIFIED_IDENTITY.referer,
+                        ...(storeState.visitorData ? { 'X-Goog-Visitor-Id': storeState.visitorData } : {}),
+                        // Send cookies: they carry the visitor/session info that pairs with the
+                        // PO token binding. The GVS probe succeeds via OkHttp's CookieJar, but
+                        // ExoPlayer (HttpURLConnection) has no CookieJar, so we must send explicitly.
+                        ...(cookieString ? { 'Cookie': cookieString } : {})
+                    };
+
+                    // Diagnostic: probe GVS with a 1-byte range request to log the real HTTP
+                    // status. This distinguishes a token/URL rejection (403) from a player issue.
+                    try {
+                        const diagRes = await fetch(decipheredUrl, {
+                            method: 'GET',
+                            headers: { ...streamHeaders, 'Range': 'bytes=0-0' },
+                        });
+                        console.log(`[InnerTubeClient] 🔍 GVS probe: HTTP ${diagRes.status} for itag ${(format as any)?.itag} (pot ${decipheredUrl.includes('&pot=') ? 'present' : 'MISSING'})`);
+                        try { await diagRes.arrayBuffer(); } catch {}
+                        if (diagRes.status === 403 || diagRes.status === 401) {
+                            console.warn('[InnerTubeClient] ⚠️ GVS rejected the stream URL (401/403). Clearing PO token to force a fresh mint.');
+                            usePlaybackStore.getState().clearPoToken();
+                        }
+                    } catch (diagErr: any) {
+                        console.warn('[InnerTubeClient] GVS probe fetch failed:', diagErr?.message);
+                    }
+
                     return {
                         id: videoId,
-                        stream_url: audioFormats[0].url,
-                        duration: Math.round(Number(response.videoDetails?.lengthSeconds || 0))
+                        stream_url: decipheredUrl,
+                        headers: streamHeaders,
+                        duration: Math.round(Number(info.basic_info?.duration || 0))
                     };
                 }
-            } catch (freshErr) {
-                console.error('[InnerTubeClient] Fresh stream fetch failed:', freshErr);
+            } catch (tier1Err: any) {
+                console.warn('[InnerTubeClient] Tier 1 (WEB_REMIX) stream extraction failed, falling back to Tier 2 (ANDROID_VR):', tier1Err.message);
             }
         }
 
-        throw lastError || new Error('Unable to extract playable stream URL');
+        // ========================================================================
+        // 🌟 TIER 2: ANDROID_VR Fallback (No PO Token required!)
+        // ========================================================================
+        try {
+            console.log(`[InnerTubeClient] ⚡ Resolving stream via Tier 2 (ANDROID_VR) fallback for videoId: ${videoId}`);
+            const ytVr = await this.getAndroidVrYT();
+
+            // Guard fallback with a 5-second timeout to prevent long freezes
+            const info = await Promise.race([
+                ytVr.getBasicInfo(videoId),
+                new Promise<any>((_, reject) => setTimeout(() => reject(new Error('ANDROID_VR resolution timed out (5s)')), 5000))
+            ]);
+
+            if (!info.streaming_data) {
+                console.warn(`[InnerTubeClient] ⚠️ ANDROID_VR playability_status:`, info.playability_status);
+                throw new Error(`Streaming data not available (Status: ${info.playability_status?.status || 'UNKNOWN'})`);
+            }
+
+            const formats = [
+                ...(info.streaming_data?.adaptive_formats || []),
+                ...(info.streaming_data?.formats || [])
+            ];
+
+            let format;
+            if (Platform.OS === 'ios') {
+                format = formats.find((f: any) => f.itag === 140) || (formats.length > 0 ? info.chooseFormat({ type: 'audio', format: 'mp4' }) : null);
+            } else {
+                format = formats.find((f: any) => f.itag === 140) || 
+                         formats.find((f: any) => f.itag === 251) || 
+                         (formats.length > 0 ? info.chooseFormat({ type: 'audio', quality: 'best' }) : null);
+            }
+            if (!format && formats.length > 0) format = info.chooseFormat({ type: 'audio' });
+
+            if (!format) {
+                throw new Error('No audio format found on ANDROID_VR fallback');
+            }
+
+            console.log(`[InnerTubeClient] Tier 2 Selected format: itag ${format.itag} (${format.mime_type}), bitrate: ${format.bitrate}`);
+            const decipheredUrl = await format.decipher(ytVr.session.player);
+
+            return {
+                id: videoId,
+                stream_url: decipheredUrl,
+                headers: {},
+                duration: Math.round(Number(info.basic_info?.duration || 0))
+            };
+        } catch (tier2Err: any) {
+            console.error(`[InnerTubeClient] ❌ All stream resolution tiers failed for ${videoId}:`, tier2Err.message);
+            throw tier2Err;
+        }
     }
 
     /**

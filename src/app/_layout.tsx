@@ -1,3 +1,27 @@
+import 'react-native-url-polyfill/auto';
+// Pure JS polyfill for crypto.getRandomValues to avoid native module rebuild
+if (typeof globalThis.crypto === 'undefined') {
+    (globalThis as any).crypto = {};
+}
+if (typeof (globalThis as any).crypto.getRandomValues === 'undefined') {
+    (globalThis as any).crypto.getRandomValues = function (array: any) {
+        for (let i = 0; i < array.length; i++) {
+            array[i] = Math.floor(Math.random() * 256);
+        }
+        return array;
+    };
+}
+
+// @ts-ignore
+import { TextEncoder, TextDecoder } from 'text-encoding';
+
+if (typeof globalThis.TextEncoder === 'undefined') {
+    (globalThis as any).TextEncoder = TextEncoder;
+}
+if (typeof globalThis.TextDecoder === 'undefined') {
+    (globalThis as any).TextDecoder = TextDecoder as any;
+}
+
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import { useColorScheme, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -7,7 +31,8 @@ import { Colors } from '@/constants/theme';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import NowPlayingModal from '@/components/now-playing-modal';
 import MiniPlayer from '@/components/mini-player';
-
+import { PoTokenWebView } from '@/components/po-token-webview';
+import { PoTokenManager } from '@/services/PoTokenManager';
 import { initDB } from '@/services/db';
 import { usePlaybackStore } from '@/store/usePlaybackStore';
 import { setupPlayer, playbackService, backgroundPlaybackService } from '@/services/playbackService';
@@ -19,6 +44,7 @@ TrackPlayer.registerBackgroundEventHandler(() => backgroundPlaybackService);
 
 export default function TabLayout() {
   const loadStoreData = usePlaybackStore((state) => state.loadStoreData);
+  const isPoTokenWebViewVisible = usePlaybackStore((state) => state.isPoTokenWebViewVisible);
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? 'dark' : 'light';
 
@@ -43,6 +69,25 @@ export default function TabLayout() {
     };
     init();
 
+    // Auto-close PoTokenWebView to save RAM -- but ONLY when it is safe:
+    // never while a mint is in flight, and never when we still lack a fresh
+    // token (killing the minter then just forces a cold remount on next play).
+    const timer = setTimeout(() => {
+      const tokenSecured = PoTokenManager.isSessionTokenFresh();
+      const minting = PoTokenManager.isMinting();
+      const givenUp = PoTokenManager.isCircuitBreakerTripped();
+      const st = usePlaybackStore.getState();
+      if (st.isPoTokenWebViewVisible && !minting && (tokenSecured || givenUp)) {
+        console.log('[Layout] Auto-closing PoTokenWebView to save RAM (token secured or minting abandoned)');
+        usePlaybackStore.setState({ isPoTokenWebViewVisible: false });
+      } else {
+        console.log(
+          '[Layout] Keeping PoTokenWebView mounted ' +
+          `(visible=${st.isPoTokenWebViewVisible}, minting=${minting}, tokenFresh=${tokenSecured})`
+        );
+      }
+    }, 30000);
+
     // Sync Zustand state when app returns to foreground
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
@@ -52,6 +97,7 @@ export default function TabLayout() {
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => {
+      clearTimeout(timer);
       subscription.remove();
     };
   }, []);
@@ -81,6 +127,7 @@ export default function TabLayout() {
       </Stack>
       <MiniPlayer />
       <NowPlayingModal />
+      {isPoTokenWebViewVisible && <PoTokenWebView />}
     </ThemeProvider>
   );
 }

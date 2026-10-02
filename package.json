@@ -10,6 +10,8 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@rntp/player": "^5.6.0",
     "@wokcito/ffmpeg-kit-react-native": "^6.1.2",
+    "bgutils-js": "^4.0.3",
+    "eval5": "^1.4.8",
     "expo": "^57.0.8",
     "expo-asset": "~57.0.3",
     "expo-audio": "~57.0.3",
@@ -35,6 +37,7 @@
     "expo-symbols": "~57.0.1",
     "expo-system-ui": "~57.0.1",
     "expo-web-browser": "~57.0.2",
+    "jintr": "^3.3.1",
     "jsmediatags": "^3.9.7",
     "moti": "^0.30.0",
     "patch-package": "^8.0.1",
@@ -46,13 +49,17 @@
     "react-native-reanimated": "4.5.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "~0.21.0",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.0",
+    "text-encoding": "^0.7.0",
+    "youtubei.js": "^18.0.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "esbuild": "^0.28.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.0",
     "typescript": "~6.0.3"
@@ -64,6 +71,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "bundle-bgutils": "node scripts/bundle-bgutils.mjs",
+    "update-bgutils": "npm install bgutils-js@latest && node scripts/bundle-bgutils.mjs",
     "lint": "expo lint"
   },
   "private": true

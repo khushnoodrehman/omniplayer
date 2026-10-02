@@ -18,6 +18,7 @@ import { downloadTrackFile } from '@/services/downloader';
 import { Alert } from 'react-native';
 import { InnerTubeClient } from '@/services/InnerTubeClient';
 import { extractLocalMetadata } from '@/services/metadata';
+import { PoTokenManager } from '@/services/PoTokenManager';
 
 export interface Track {
     id: string;
@@ -29,6 +30,7 @@ export interface Track {
     audioFormat?: string;
     fileSize?: string;
     uri?: string;
+    headers?: any;
 }
 
 export interface DownloadOptions {
@@ -77,6 +79,17 @@ interface PlaybackState {
     // 🌟 ACCOUNT / AUTH STATE
     accountInfo: { name: string; avatar: string } | null;
     fetchAccountInfo: () => Promise<void>;
+
+    // 🌟 PO TOKEN STATE
+    poToken: string | null;
+    visitorData: string | null;
+    poTokenTimestamp: number | null;
+    isPoTokenWebViewVisible: boolean;
+    poTokenTargetVideoId: string | null;
+    setPoToken: (poToken: string) => void;
+    setVisitorData: (visitorData: string) => void;
+    clearPoToken: () => void;
+    waitForPoToken: (videoId: string) => Promise<string | null>;
 
     // 🌟 LYRICS CACHING STATE
     currentLyrics: ParsedLyric[];
@@ -128,7 +141,7 @@ interface PlaybackState {
 }
 
 const pendingResolutions = new Map<string, Promise<string | undefined>>();
-const sessionStreamUrlCache = new Map<string, { url: string; timestamp: number }>();
+const sessionStreamUrlCache = new Map<string, { url: string; headers?: any; timestamp: number }>();
 const STREAM_URL_EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 // Global In-Memory Lyrics Cache Map
@@ -167,6 +180,87 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             }
         } catch (err) {
             console.error('[PlaybackStore] Error fetching account info:', err);
+        }
+    },
+
+    // 🌟 PO TOKEN STATE INIT
+    poToken: null,
+    visitorData: null,
+    poTokenTimestamp: null,
+    isPoTokenWebViewVisible: true,
+    poTokenTargetVideoId: null,
+    setPoToken: (poToken) => {
+        const visitorData = get().visitorData;
+        if (poToken && poToken.length > 50) {
+            const timestamp = Date.now();
+            set({ poToken, poTokenTimestamp: timestamp });
+            console.log(`[PlaybackStore] Real PoToken captured (length: ${poToken.length}).`);
+            AsyncStorage.setItem('yt_po_token', poToken).catch(err => 
+                console.error('[PlaybackStore] Failed to save poToken:', err)
+            );
+            AsyncStorage.setItem('yt_po_token_timestamp', String(timestamp)).catch(err => 
+                console.error('[PlaybackStore] Failed to save poTokenTimestamp:', err)
+            );
+            if (visitorData) {
+                console.log('[PlaybackStore] Both long PoToken and VisitorData captured. Unmounting WebView.');
+                set({ isPoTokenWebViewVisible: false, poTokenTargetVideoId: null });
+            }
+        } else {
+            console.log(`[PlaybackStore] Ignored short/cold-start PoToken (length: ${poToken ? poToken.length : 0})`);
+        }
+    },
+    setVisitorData: (visitorData) => {
+        const poToken = get().poToken;
+        set({ visitorData });
+        AsyncStorage.setItem('yt_visitor_data', visitorData).catch(err => 
+            console.error('[PlaybackStore] Failed to save visitorData:', err)
+        );
+        if (poToken && poToken.length > 50 && visitorData) {
+            console.log('[PlaybackStore] Both long PoToken and VisitorData captured. Unmounting WebView.');
+            set({ isPoTokenWebViewVisible: false, poTokenTargetVideoId: null });
+        }
+    },
+    clearPoToken: () => {
+        set({ poToken: null, poTokenTimestamp: null });
+        AsyncStorage.removeItem('yt_po_token').catch(() => {});
+        AsyncStorage.removeItem('yt_po_token_timestamp').catch(() => {});
+        console.log('[PlaybackStore] Cleared PO Token from memory and storage.');
+    },
+    waitForPoToken: async (videoId: string): Promise<string | null> => {
+        // 1. Is there a fresh valid session token in memory?
+        if (PoTokenManager.isSessionTokenFresh()) {
+            const token = get().poToken;
+            console.log(`[PlaybackStore] 🎯 Using fresh cached PO Token for videoId: ${videoId}`);
+            return token;
+        }
+
+        // 2. If circuit breaker is open (repeated failures), don't stall; return null to trigger Tier 2
+        if (PoTokenManager.isCircuitBreakerTripped()) {
+            console.warn('[PlaybackStore] Circuit breaker tripped. Skipping PO Token minting and using Tier 2 fallback.');
+            return null;
+        }
+
+        // 3. Ensure minter sandbox WebView is mounted
+        set({ isPoTokenWebViewVisible: true });
+
+        // 4. Bounded race: Allow up to 1.8s for minting before falling back to ANDROID_VR
+        try {
+            console.log(`[PlaybackStore] ⏳ Starting background PO Token minting for videoId: ${videoId}`);
+            const token = await Promise.race([
+                PoTokenManager.mintSessionToken(get().visitorData || undefined),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), 1800))
+            ]);
+
+            if (token) {
+                console.log(`[PlaybackStore] 🎯 PO Token ready in time for videoId: ${videoId}`);
+                return token;
+            } else {
+                console.log(`[PlaybackStore] ⚡ PO Token minting taking >1.8s. Proceeding with Tier 2 (ANDROID_VR) to avoid playback delay.`);
+                return null;
+            }
+        } catch (err: any) {
+            console.warn('[PlaybackStore] PO Token minting error, proceeding with Tier 2 fallback:', err.message);
+            return null;
         }
     },
 
@@ -227,6 +321,35 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             const cachedUri = await AsyncStorage.getItem('lrc_export_directory_uri');
             const cachedNowPlaying = await AsyncStorage.getItem('now_playing_playlist');
             const nowPlayingPlaylist = cachedNowPlaying ? JSON.parse(cachedNowPlaying) : null;
+
+            // Load cached PO Token and Visitor Data
+            const cachedPoToken = await AsyncStorage.getItem('yt_po_token');
+            const cachedVisitorData = await AsyncStorage.getItem('yt_visitor_data');
+            const cachedTimestampStr = await AsyncStorage.getItem('yt_po_token_timestamp');
+            const cachedTimestamp = cachedTimestampStr ? Number(cachedTimestampStr) : 0;
+
+            const MAX_TOKEN_AGE = 3 * 60 * 60 * 1000; // 3 hours
+            const isTokenFresh = cachedPoToken && cachedPoToken.length > 50 && cachedTimestamp && (Date.now() - cachedTimestamp < MAX_TOKEN_AGE);
+
+            if (isTokenFresh && cachedVisitorData) {
+                console.log(`[PlaybackStore] Loaded fresh cached PO Token from storage (Age: ${Math.round((Date.now() - cachedTimestamp) / 60000)} mins)`);
+                set({
+                    poToken: cachedPoToken,
+                    visitorData: cachedVisitorData,
+                    poTokenTimestamp: cachedTimestamp,
+                    isPoTokenWebViewVisible: false // Hide WebView since we already have a fresh token!
+                });
+            } else {
+                console.log('[PlaybackStore] Cached PO Token missing or expired. WebView will launch to retrieve a new one.');
+                // Always restore the cached visitorData (even without a fresh token) so the
+                // prewarm mint binds the new PO token to the same visitorData used in requests.
+                // Otherwise the mint binds to '' and GVS rejects the mismatched &pot=.
+                set({
+                    isPoTokenWebViewVisible: true,
+                    ...(cachedVisitorData ? { visitorData: cachedVisitorData } : {})
+                });
+            }
+
             set({
                 favoriteTracks: favs.map(f => f.id),
                 history: hist,
@@ -479,9 +602,8 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 isPlaying: true
             });
 
-            // Save history and fetch lyrics
+            // Save history (lyrics fetching is deferred to after playback starts)
             addToHistoryDB(track);
-            get().fetchLyricsForTrack(track);
 
             set((state) => {
                 const newHistory = [track, ...state.history.filter(t => t.id !== track.id)].slice(0, 30);
@@ -513,29 +635,27 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             }
 
             // 3. Set queue in player immediately with the resolved URL for the active track.
-            const mediaItems = currentQueue.map((t, idx) => {
-                const mediaDuration = (t.duration && t.duration > 0) ? t.duration : undefined;
-                
-                // Active track gets the real resolved URL. Neighbors get placeholders or cached URLs.
-                const targetUrl = idx === activeIndex 
-                    ? resolvedCurrentUrl 
-                    : (t.uri && !t.uri.includes('placeholder') ? t.uri : 'http://placeholder.mp3');
-                
-                return {
-                    mediaId: t.id,
-                    url: targetUrl,
-                    title: idx === activeIndex ? track.title : t.title,
-                    artist: idx === activeIndex ? track.artist : t.artist,
-                    artworkUrl: idx === activeIndex ? track.image : t.image,
-                    duration: mediaDuration,
-                };
-            });
+            const mediaDuration = (track.duration && track.duration > 0) ? track.duration : undefined;
+            // CRITICAL: Must send headers (X-Goog-Visitor-Id, Cookie) with the URL.
+            // The &pot= in the URL is NOT sufficient alone - GVS needs the visitor
+            // header/cookies to validate the token binding. Without headers -> 403.
+            console.log(`[PlaybackStore] Active track headers present: ${!!track.headers}`);
+            const activeMediaItem = {
+                mediaId: track.id,
+                url: (resolvedCurrentUrl && track.headers) ? { uri: resolvedCurrentUrl, headers: track.headers } : (resolvedCurrentUrl || ''),
+                title: track.title,
+                artist: track.artist,
+                artworkUrl: track.image,
+                duration: mediaDuration
+            };
 
-            await TrackPlayer.setMediaItems(mediaItems, activeIndex);
+            await TrackPlayer.setMediaItems([activeMediaItem], 0);
             await TrackPlayer.play();
 
             // Pre-resolve neighbors (with a short delay to allow native player to settle)
+            // Also fetch lyrics now that the track is playing, so it doesn't block the JS thread during stream resolution
             setTimeout(() => {
+                get().fetchLyricsForTrack(track);
                 get().resolveAdjacentTracks(activeIndex).catch(err => {
                     console.error('[PlaybackStore] playTrack resolveAdjacentTracks error:', err);
                 });
@@ -684,16 +804,18 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
                 if (cached && (Date.now() - cached.timestamp < STREAM_URL_EXPIRY_MS)) {
                     console.log(`[PlaybackStore] Using fresh session cached stream URL for ${track.title}`);
                     track.uri = cached.url;
+                    track.headers = cached.headers;
                     return cached.url;
                 }
-
+ 
                 // 4. Resolve fresh stream URL from InnerTube
                 if (track.sourceType === 'youtube') {
                     try {
                         const data = await InnerTubeClient.getStreamUrl(track.id);
                         if (data && data.stream_url) {
-                            sessionStreamUrlCache.set(track.id, { url: data.stream_url, timestamp: Date.now() });
+                            sessionStreamUrlCache.set(track.id, { url: data.stream_url, headers: data.headers, timestamp: Date.now() });
                             track.uri = data.stream_url;
+                            track.headers = data.headers;
                             if (data.duration && (!track.duration || track.duration === 0)) {
                                 track.duration = data.duration;
                             }
@@ -723,42 +845,35 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
             const queue = get().queue;
             if (queue.length === 0) return;
 
-            const nativeQueue = await TrackPlayer.getQueue();
-
             // Resolve next track (index + 1)
             const nextIndex = currentIndex + 1;
             if (nextIndex < queue.length) {
                 const nextTrack = queue[nextIndex];
-                const nextMediaItem = nativeQueue[nextIndex];
-                if (nextMediaItem && nextMediaItem.url === 'http://placeholder.mp3') {
-                    console.log(`[PlaybackStore] Pre-resolving next track URL for index ${nextIndex}: ${nextTrack.title}`);
-                    const resolvedUrl = await get().resolveTrackUri(nextTrack);
-                    if (resolvedUrl) {
-                        await TrackPlayer.replaceMediaItem(nextIndex, {
-                            ...nextMediaItem,
-                            url: resolvedUrl
+                console.log(`[PlaybackStore] Pre-resolving next track URL for index ${nextIndex}: ${nextTrack.title}`);
+                const resolvedUrl = await get().resolveTrackUri(nextTrack);
+                if (resolvedUrl) {
+                    const nativeQueue = await TrackPlayer.getQueue();
+                    const alreadyInNative = nativeQueue.some(m => m.mediaId === nextTrack.id);
+                    if (!alreadyInNative) {
+                        const mediaDuration = (nextTrack.duration && nextTrack.duration > 0) ? nextTrack.duration : undefined;
+                        await TrackPlayer.addMediaItem({
+                            mediaId: nextTrack.id,
+                            url: (resolvedUrl && nextTrack.headers) ? { uri: resolvedUrl, headers: nextTrack.headers } : (resolvedUrl || ''),
+                            title: nextTrack.title,
+                            artist: nextTrack.artist,
+                            artworkUrl: nextTrack.image,
+                            duration: mediaDuration
                         });
-                        console.log(`[PlaybackStore] Updated next track URL in native queue`);
+                        console.log(`[PlaybackStore] Appended next track to native queue for gapless playback: ${nextTrack.title}`);
                     }
                 }
             }
 
-            // Resolve previous track (index - 1)
+            // Pre-resolve previous track into session cache
             const prevIndex = currentIndex - 1;
             if (prevIndex >= 0) {
                 const prevTrack = queue[prevIndex];
-                const prevMediaItem = nativeQueue[prevIndex];
-                if (prevMediaItem && prevMediaItem.url === 'http://placeholder.mp3') {
-                    console.log(`[PlaybackStore] Pre-resolving previous track URL for index ${prevIndex}: ${prevTrack.title}`);
-                    const resolvedUrl = await get().resolveTrackUri(prevTrack);
-                    if (resolvedUrl) {
-                        await TrackPlayer.replaceMediaItem(prevIndex, {
-                            ...prevMediaItem,
-                            url: resolvedUrl
-                        });
-                        console.log(`[PlaybackStore] Updated previous track URL in native queue`);
-                    }
-                }
+                await get().resolveTrackUri(prevTrack);
             }
         } catch (err) {
             console.error('[PlaybackStore] resolveAdjacentTracks error:', err);

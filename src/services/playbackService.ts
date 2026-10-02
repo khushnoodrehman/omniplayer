@@ -42,6 +42,48 @@ export async function setupPlayer() {
 export async function playbackService() {
     console.log('[PlaybackService] Registering foreground event listeners');
 
+    TrackPlayer.addEventListener(Event.PlaybackError, (event) => {
+        console.error('[PlaybackService] Playback error:', event.code, '-', event.message);
+        if (event.code === 'source') {
+            // NOTE: Do NOT clear the PO token here. The token is validated by the GVS probe
+            // in InnerTubeClient.getStreamUrl (which clears it on 401/403). A 'source' error
+            // can also be caused by transient network issues, and clearing the token forces
+            // a ~10s re-mint for every blip. See the GVS probe log for the real HTTP status.
+            console.log('[PlaybackService] Source error detected. PO token left intact (see GVS probe log).');
+        }
+    });
+
+    TrackPlayer.addEventListener(Event.PlaybackStateChanged, (event) => {
+        console.log('[PlaybackService] Playback state changed:', event.state);
+        if (event.state === 'ended') {
+            console.log('[PlaybackService] Track ended -> advancing to next track');
+            usePlaybackStore.getState().playNext();
+        }
+    });
+
+    // Remote lockscreen and notification media controls
+    TrackPlayer.addEventListener(Event.RemoteNext, () => {
+        console.log('[PlaybackService] Remote Next received');
+        usePlaybackStore.getState().playNext();
+    });
+
+    TrackPlayer.addEventListener(Event.RemotePrevious, () => {
+        console.log('[PlaybackService] Remote Previous received');
+        usePlaybackStore.getState().playPrevious();
+    });
+
+    TrackPlayer.addEventListener(Event.RemotePlay, () => {
+        TrackPlayer.play();
+    });
+
+    TrackPlayer.addEventListener(Event.RemotePause, () => {
+        TrackPlayer.pause();
+    });
+
+    TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {
+        TrackPlayer.seekTo(event.position);
+    });
+
     TrackPlayer.addEventListener(Event.IsPlayingChanged, (event) => {
         usePlaybackStore.setState({ isPlaying: event.playing });
         if (event.playing) {
@@ -63,73 +105,28 @@ export async function playbackService() {
     TrackPlayer.addEventListener(Event.MediaItemTransition, async (event) => {
         try {
             const { item, index } = event;
-            if (index === undefined || index === null) return;
+            if (!item) return;
 
             const store = usePlaybackStore.getState();
             const queue = store.queue;
-            const currentTrack = queue[index];
+            const currentTrackIndex = queue.findIndex(t => t.id === item.mediaId);
+            const currentTrack = currentTrackIndex !== -1 ? queue[currentTrackIndex] : (index !== undefined ? queue[index] : null);
 
             if (currentTrack) {
+                const targetIndex = currentTrackIndex !== -1 ? currentTrackIndex : (index || 0);
                 const isSameTrack = store.currentTrack?.id === currentTrack.id;
 
                 if (!isSameTrack) {
-                    // Sync Zustand
                     usePlaybackStore.setState({
-                        currentIndex: index,
+                        currentIndex: targetIndex,
                         currentTrack: currentTrack,
                     });
 
-                    // Fetch lyrics and save history
                     store.fetchLyricsForTrack(currentTrack);
                     addToHistoryDB(currentTrack);
 
-                    // Fallback kickstart: Ensure playback starts if stalled or paused
-                    setTimeout(async () => {
-                        try {
-                            const playing = await TrackPlayer.isPlaying();
-                            if (!playing) {
-                                console.log(`[PlaybackService] Kickstarting playback for transition track: ${currentTrack.title}`);
-                                await TrackPlayer.play();
-                            }
-                        } catch (err) {
-                            console.error("[PlaybackService] Auto-play transition fallback error:", err);
-                        }
-                    }, 800);
-                }
-
-                // Handle transition to placeholder
-                if (item && item.url === 'http://placeholder.mp3') {
-                    console.log(`[PlaybackService] Active item at index ${index} is placeholder. Resolving immediately...`);
-                    try {
-                        await TrackPlayer.pause();
-                    } catch (pauseErr) {}
-
-                    const resolvedUrl = await store.resolveTrackUri(currentTrack);
-                    if (resolvedUrl) {
-                        await TrackPlayer.replaceMediaItem(index, {
-                            ...item,
-                            url: resolvedUrl
-                        });
-                        try {
-                            await TrackPlayer.seekTo(0);
-                        } catch (seekErr) {
-                            console.error("[PlaybackService] Seek to 0 error:", seekErr);
-                        }
-                        setTimeout(async () => {
-                            try {
-                                await TrackPlayer.play();
-                                console.log(`[PlaybackService] Auto-played next track after resolving: ${currentTrack.title}`);
-                            } catch (playErr) {
-                                console.error("[PlaybackService] Play resume error:", playErr);
-                            }
-                        }, 200);
-                    }
-                }
-
-                // Pre-resolve neighbors (with 500ms delay to avoid server clogging)
-                if (!isSameTrack) {
                     setTimeout(() => {
-                        store.resolveAdjacentTracks(index).catch(err => {
+                        store.resolveAdjacentTracks(targetIndex).catch(err => {
                             console.error('[PlaybackService] Delayed resolveAdjacentTracks error:', err);
                         });
                     }, 500);
@@ -144,79 +141,39 @@ export async function playbackService() {
 export async function backgroundPlaybackService(event: any) {
     console.log('[PlaybackService] Background playback service event:', event.type);
 
-    if (event.type === Event.MediaItemTransition) {
-        try {
-            const { item, index } = event;
-            if (index === undefined || index === null) return;
+    if (event.type === Event.RemoteNext) {
+        usePlaybackStore.getState().playNext();
+    } else if (event.type === Event.RemotePrevious) {
+        usePlaybackStore.getState().playPrevious();
+    } else if (event.type === Event.RemotePlay) {
+        await TrackPlayer.play();
+    } else if (event.type === Event.RemotePause) {
+        await TrackPlayer.pause();
+    } else if (event.type === Event.RemoteSeek) {
+        await TrackPlayer.seekTo(event.position);
+    } else if (event.type === Event.PlaybackStateChanged && event.state === 'ended') {
+        usePlaybackStore.getState().playNext();
+    } else if (event.type === Event.MediaItemTransition && event.item) {
+        const store = usePlaybackStore.getState();
+        const queue = store.queue;
+        const currentTrackIndex = queue.findIndex(t => t.id === event.item.mediaId);
+        const currentTrack = currentTrackIndex !== -1 ? queue[currentTrackIndex] : (event.index !== undefined ? queue[event.index] : null);
 
-            const store = usePlaybackStore.getState();
-            const queue = store.queue;
-            const currentTrack = queue[index];
-
-            if (currentTrack) {
-                const isSameTrack = store.currentTrack?.id === currentTrack.id;
-                if (!isSameTrack) {
-                    usePlaybackStore.setState({
-                        currentIndex: index,
-                        currentTrack: currentTrack,
+        if (currentTrack) {
+            const targetIndex = currentTrackIndex !== -1 ? currentTrackIndex : (event.index || 0);
+            if (store.currentTrack?.id !== currentTrack.id) {
+                usePlaybackStore.setState({
+                    currentIndex: targetIndex,
+                    currentTrack: currentTrack,
+                });
+                store.fetchLyricsForTrack(currentTrack);
+                addToHistoryDB(currentTrack);
+                setTimeout(() => {
+                    store.resolveAdjacentTracks(targetIndex).catch(err => {
+                        console.error('[PlaybackService Background] Delayed resolveAdjacentTracks error:', err);
                     });
-                    store.fetchLyricsForTrack(currentTrack);
-                    addToHistoryDB(currentTrack);
-
-                    // Fallback kickstart: Ensure playback starts if stalled or paused
-                    setTimeout(async () => {
-                        try {
-                            const playing = await TrackPlayer.isPlaying();
-                            if (!playing) {
-                                console.log(`[PlaybackService Background] Kickstarting playback for transition track: ${currentTrack.title}`);
-                                await TrackPlayer.play();
-                            }
-                        } catch (err) {
-                            console.error("[PlaybackService Background] Auto-play transition fallback error:", err);
-                        }
-                    }, 800);
-                }
-
-                // Resolve placeholder URL in the background
-                if (item && item.url === 'http://placeholder.mp3') {
-                    console.log(`[PlaybackService Background] Resolving placeholder for track index ${index}: ${currentTrack.title}`);
-                    try {
-                        await TrackPlayer.pause();
-                    } catch (pauseErr) {}
-
-                    const resolvedUrl = await store.resolveTrackUri(currentTrack);
-                    if (resolvedUrl) {
-                        await TrackPlayer.replaceMediaItem(index, {
-                            ...item,
-                            url: resolvedUrl
-                        });
-                        try {
-                            await TrackPlayer.seekTo(0);
-                        } catch (seekErr) {
-                            console.error("[PlaybackService Background] Seek to 0 error:", seekErr);
-                        }
-                        setTimeout(async () => {
-                            try {
-                                await TrackPlayer.play();
-                                console.log(`[PlaybackService Background] Auto-played next track after resolving: ${currentTrack.title}`);
-                            } catch (playErr) {
-                                console.error("[PlaybackService Background] Play resume error:", playErr);
-                            }
-                        }, 200);
-                    }
-                }
-
-                // Pre-resolve neighbors (with 500ms delay to avoid server clogging)
-                if (!isSameTrack) {
-                    setTimeout(() => {
-                        store.resolveAdjacentTracks(index).catch(err => {
-                            console.error('[PlaybackService Background] Delayed resolveAdjacentTracks error:', err);
-                        });
-                    }, 500);
-                }
+                }, 500);
             }
-        } catch (err) {
-            console.error('[PlaybackService Background] MediaItemTransition error:', err);
         }
     }
 }
